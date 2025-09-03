@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 
 export default function CommunityPage() {
+  const { t } = useI18n();
   const [posts, setPosts] = useState([]);
   const [token, setToken] = useState(null);
 
@@ -34,9 +36,13 @@ export default function CommunityPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '24px auto', padding: '0 24px' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Community</h1>
+      <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('CommunityTitle')}</h1>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        <a href="/community/post" style={{ textDecoration: 'none', padding: '10px 14px', borderRadius: 8, background: '#111', color: '#fff' }}>New Post</a>
+        {token ? (
+          <a href="/community/post" style={{ textDecoration: 'none', padding: '10px 14px', borderRadius: 8, background: '#111', color: '#fff' }}>{t('NewPost')}</a>
+        ) : (
+          <a href="/auth" style={{ textDecoration: 'none', padding: '10px 14px', borderRadius: 8, border:'1px solid #e5e7eb', background: '#fff', color: '#111' }}>{t('LoginToPost')}</a>
+        )}
       </div>
 
       <div style={{ columnWidth: columnsStyle.columnWidth, columnGap: columnsStyle.columnGap }}>

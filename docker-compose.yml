@@ -10,6 +10,7 @@ services:
       - NEXT_PUBLIC_API_MEDIA=http://localhost:4003
       - NEXT_PUBLIC_API_ANALYSIS=http://localhost:4004
       - NEXT_PUBLIC_API_FEED=http://localhost:4005
+      - NEXT_PUBLIC_API_VIZ=http://localhost:4006
     depends_on:
       - auth-service
       - media-service
@@ -67,8 +68,22 @@ services:
     build: ./services/analysis
     environment:
       - PORT=4004
+      - DATABASE_URL=postgres://analysis_user:analysis_pass@analysis-db:5432/analysis_db
     ports:
       - "4004:4004"
+    depends_on:
+      - analysis-db
+
+  analysis-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=analysis_user
+      - POSTGRES_PASSWORD=analysis_pass
+      - POSTGRES_DB=analysis_db
+    volumes:
+      - analysis_db_data:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
 
   feed-service:
     build: ./services/feed
@@ -93,8 +108,15 @@ services:
     ports:
       - "5435:5432"
 
+  viz-service:
+    build: ./services/viz
+    environment:
+      - PORT=4006
+    ports:
+      - "4006:4006"
+
 volumes:
   auth_db_data:
   media_db_data:
   feed_db_data:
-
+  analysis_db_data:

@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 
 export default function CreatePostPage() {
+  const { t } = useI18n();
   const [content, setContent] = useState('');
   const [files, setFiles] = useState([]);
   const [token, setToken] = useState(null);
@@ -15,7 +17,13 @@ export default function CreatePostPage() {
   const replaceInputRef = useRef(null);
   const [replaceIndex, setReplaceIndex] = useState(null);
 
-  useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
+  useEffect(() => {
+    const t = localStorage.getItem('vh_token');
+    setToken(t);
+    if (!t) {
+      window.location.href = '/auth';
+    }
+  }, []);
 
   function onPick(e) {
     const selected = Array.from(e.target.files || []);
@@ -73,16 +81,16 @@ export default function CreatePostPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>← Back</a>
-      <h1 style={{ fontSize: 24, margin: '12px 0' }}>Create Post</h1>
+      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>← {t('Back')}</a>
+      <h1 style={{ fontSize: 24, margin: '12px 0' }}>{t('CreatePostTitle')}</h1>
       <div style={{ display: 'grid', gap: 12 }}>
-        <textarea placeholder="Share your story..." value={content} onChange={e => setContent(e.target.value)} style={{ padding: 12, borderRadius: 8, border: '1px solid #e5e7eb', minHeight: 120 }} />
+        <textarea placeholder={t('ShareStory')} value={content} onChange={e => setContent(e.target.value)} style={{ padding: 12, borderRadius: 8, border: '1px solid #e5e7eb', minHeight: 120 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <input ref={fileInputRef} style={{ display: 'none' }} type="file" multiple accept="image/*" onChange={onPick} />
           <input ref={replaceInputRef} style={{ display: 'none' }} type="file" accept="image/*" onChange={onReplace} />
           <span style={{ color: '#64748b' }}>{files.length} / 12</span>
-          <button onClick={openPicker} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' }}>Add Images</button>
-          <button disabled={busy} onClick={publish} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff' }}>{busy ? 'Posting...' : 'Post'}</button>
+          <button onClick={openPicker} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' }}>{t('AddImages')}</button>
+          <button disabled={busy} onClick={publish} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff' }}>{busy ? 'Posting...' : t('Post')}</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: gridCols.columns, gap: 8 }}>
           {files.map((f, i) => (

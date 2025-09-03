@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 
 export default function PostDetail({ params }) {
+  const { t } = useI18n();
   const { id } = params;
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -80,11 +82,11 @@ export default function PostDetail({ params }) {
     el.scrollBy({ left: delta, behavior: 'smooth' });
   }
 
-  if (!post) return <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>Loading...</div>;
+  if (!post) return <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>{t('Loading')}</div>;
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>← Back</a>
+      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>← {t('Back')}</a>
       <h1 style={{ fontSize: 24, margin: '12px 0' }}>{post.content}</h1>
       {post.media_ids?.length > 0 && (
         <div style={{ position: 'relative' }}>

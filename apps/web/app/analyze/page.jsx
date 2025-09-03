@@ -1,13 +1,17 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
 
 export default function AnalyzePage() {
+  const { t } = useI18n();
   const containerRef = useRef(null);
   const [ws, setWs] = useState(null);
   const [features, setFeatures] = useState(null);
   const [fileObj, setFileObj] = useState(null);
   const [token, setToken] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState(null);
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
@@ -46,43 +50,61 @@ export default function AnalyzePage() {
     });
     const json = await resp.json();
     setFeatures(json);
+
+    // If logged in, persist upload + record automatically
+    setSavedId(null);
+    if (token) {
+      try {
+        setSaving(true);
+        const fd = new FormData();
+        fd.append('file', file);
+        const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd
+        });
+        const meta = await up.json();
+        if (!meta?.id) throw new Error('upload failed');
+        const rec = await fetch((process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004') + '/records', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: json })
+        });
+        const saved = await rec.json();
+        if (saved?.id) setSavedId(saved.id);
+      } catch (err) {
+        console.warn('persist failed', err);
+      } finally {
+        setSaving(false);
+      }
+    }
   }
 
-  async function upload() {
-    if (!fileObj) return alert('Choose a file first');
-    if (!token) return alert('Please login');
-    const fd = new FormData();
-    fd.append('file', fileObj);
-    const resp = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: fd
-    });
-    const json = await resp.json();
-    if (json.id) alert('Uploaded and encrypted ✓'); else alert('Upload failed');
-  }
+  // Upload removed per design (no encrypted saving)
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Analyze Heart Sound</h1>
+      <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('NewAnalysis')}</h1>
       <input type="file" accept="audio/*" onChange={handleFile} />
       <div ref={containerRef} style={{ marginTop: 16 }} />
-      <div style={{ marginTop: 8 }}>
-        <button onClick={upload} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff' }}>Save Encrypted Copy</button>
-      </div>
+      {/* Removed Save Encrypted Copy */}
       {features && (
         <div style={{ marginTop: 16, background: '#f8fafc', padding: 16, borderRadius: 12 }}>
-          <h3>Features</h3>
+          <h3>{t('Features')}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
-            <div><b>Duration (s):</b> {features.durationSec?.toFixed?.(2)}</div>
-            <div><b>Sample Rate:</b> {features.sampleRate}</div>
-            <div><b>RMS:</b> {features.rms?.toFixed?.(4)}</div>
-            <div><b>ZCR (/s):</b> {Math.round(features.zcrPerSec)}</div>
-            <div><b>Peak Rate (/s):</b> {features.peakRatePerSec?.toFixed?.(2)}</div>
+            <div><b>{t('Duration')}:</b> {features.durationSec?.toFixed?.(2)}</div>
+            <div><b>{t('SampleRate')}:</b> {features.sampleRate}</div>
+            <div><b>{t('RMS')}:</b> {features.rms?.toFixed?.(4)}</div>
+            <div><b>{t('ZCR')}:</b> {Math.round(features.zcrPerSec)}</div>
+            <div><b>{t('PeakRate')}:</b> {features.peakRatePerSec?.toFixed?.(2)}</div>
           </div>
+          {token && (
+            <div style={{ marginTop: 12, fontSize: 13, color: '#475569' }}>
+              {saving && 'Saving to history...'}
+              {!saving && savedId && (
+                <a href={`/analysis/${savedId}`} style={{ color:'#2563eb', textDecoration:'none' }}>Saved to history ✓ View record</a>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-

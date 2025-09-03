@@ -1,8 +1,36 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import jwt from 'jsonwebtoken';
+import pkg from 'pg';
 
 const PORT = process.env.PORT || 4004;
+const { Pool } = pkg;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+async function init() {
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE TABLE IF NOT EXISTS analysis_records (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL,
+      media_id UUID NOT NULL,
+      filename TEXT NOT NULL,
+      mimetype TEXT NOT NULL,
+      size BIGINT NOT NULL,
+      features JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_records(user_id);
+  `);
+}
+
+function verify(req) {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) throw new Error('missing token');
+  const token = auth.slice(7);
+  // Dev: trust decode only; in prod verify signature with shared secret
+  return jwt.decode(token);
+}
 
 const app = express();
 app.use(helmet());
@@ -66,5 +94,56 @@ app.post('/analyze', (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`analysis-service on :${PORT}`));
+// Persist and list analysis records
+app.post('/records', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    const { mediaId, filename, mimetype, size, features } = req.body || {};
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    if (!mediaId || !filename || !mimetype || !size || !features) {
+      return res.status(400).json({ error: 'mediaId, filename, mimetype, size, features required' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO analysis_records (user_id, media_id, filename, mimetype, size, features)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, media_id, filename, mimetype, size, created_at`,
+      [userId, mediaId, filename, mimetype, size, features]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'create failed' });
+  }
+});
 
+app.get('/records', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    const { rows } = await pool.query(
+      'SELECT id, media_id, filename, mimetype, size, created_at FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
+      [userId]
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(401).json({ error: 'unauthorized' });
+  }
+});
+
+app.get('/records/:id', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    const { rows } = await pool.query(
+      'SELECT id, media_id, filename, mimetype, size, created_at, features FROM analysis_records WHERE id=$1 AND user_id=$2',
+      [req.params.id, userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(401).json({ error: 'unauthorized' });
+  }
+});
+
+init().then(() => app.listen(PORT, () => console.log(`analysis-service on :${PORT}`)));

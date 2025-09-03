@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useState } from 'react';
+import { useI18n } from '../../components/i18n';
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const [user, setUser] = useState(null);
   const [displayName, setDisplayName] = useState('');
   const [token, setToken] = useState(null);
@@ -26,17 +28,26 @@ export default function SettingsPage() {
 
   return (
     <div style={{ maxWidth: 720, margin: '24px auto', padding: '0 24px' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>Settings</h1>
-      {!user && <div>Please login to manage profile.</div>}
+      <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('ProfileTitle')}</h1>
+      {!user && <div>{t('PleaseLoginManage')}</div>}
       {user && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <div><b>Email:</b> {user.email}</div>
-          <div><b>Display Name:</b> {user.display_name || '—'}</div>
-          <input placeholder="New display name" value={displayName} onChange={e => setDisplayName(e.target.value)} />
-          <button onClick={save} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff', width: 120 }}>Save</button>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ width:48, height:48, borderRadius:'9999px', background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:18 }}>
+              {(user.display_name || user.email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
+            </div>
+            <div>
+              <div style={{ fontWeight:600 }}>{user.display_name || '—'}</div>
+              <div style={{ color:'#64748b', fontSize:13 }}>{user.email}</div>
+            </div>
+          </div>
+          <label style={{ color:'#475569' }}>{t('DisplayName')}</label>
+          <input placeholder={t('DisplayName')} value={displayName} onChange={e => setDisplayName(e.target.value)} />
+          <div>
+            <button onClick={save} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff', width: 120 }}>{t('Save')}</button>
+          </div>
         </div>
       )}
     </div>
   );
 }
-

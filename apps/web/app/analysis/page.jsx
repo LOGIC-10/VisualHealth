@@ -51,7 +51,7 @@ export default function AnalysisListPage() {
         {files.map(f => (
           <a key={f.id} href={`/analysis/${f.id}`} style={{ textDecoration:'none', color:'inherit' }}>
             <div style={{ border:'1px solid #e5e7eb', borderRadius: 12, padding: 12, background:'#fff' }}>
-              <div style={{ fontWeight:600, marginBottom:6, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.filename}</div>
+              <div style={{ fontWeight:600, marginBottom:6, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.title || f.filename}</div>
               <div style={{ color:'#64748b', fontSize:13 }}>{new Date(f.created_at).toLocaleString()}</div>
               <div style={{ color:'#64748b', fontSize:13, marginTop:6 }}>{f.mimetype} · {(f.size/1024).toFixed(1)} KB</div>
             </div>

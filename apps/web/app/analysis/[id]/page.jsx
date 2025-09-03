@@ -19,6 +19,8 @@ export default function AnalysisDetail({ params }) {
   const [duration, setDuration] = useState(0);
   const [extra, setExtra] = useState(null);
   const [pxPerSec, setPxPerSec] = useState(80);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState('');
   const waveWrapRef = useRef(null);
   const rulerRef = useRef(null);
   const audioRef = useRef(null);
@@ -38,6 +40,7 @@ export default function AnalysisDetail({ params }) {
       const rec = await r.json();
       setMeta(rec);
       setFeatures(rec.features || null);
+      setTitle(rec.title || rec.filename || '');
     })();
   }, [id, token]);
 
@@ -290,7 +293,28 @@ export default function AnalysisDetail({ params }) {
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <a href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</a>
-      <h1 style={{ fontSize: 24, margin: '12px 0' }}>{meta?.filename || 'Analysis Detail'}</h1>
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+        {!editing ? (
+          <>
+            <h1 style={{ fontSize: 24, margin: '12px 0' }}>{title || (meta?.filename || '') || t('AnalysisTitle')}</h1>
+            <button onClick={()=>setEditing(true)} title={t('EditTitle')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#64748b' }}>✎</button>
+          </>
+        ) : (
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={t('Title')} style={{ padding:'6px 8px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+            <button onClick={async ()=>{
+              try {
+                const resp = await fetch(ANALYSIS_BASE + `/records/${id}`, {
+                  method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ title })
+                });
+                const json = await resp.json();
+                if (json?.id) { setMeta(m=>({ ...(m||{}), title })); setEditing(false); }
+              } catch {}
+            }} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff' }}>{t('Save')}</button>
+            <button onClick={()=>{ setTitle(meta?.title || meta?.filename || ''); setEditing(false); }} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff' }}>{t('Cancel')}</button>
+          </div>
+        )}
+      </div>
       {meta && (
         <div style={{ color:'#64748b', fontSize:13, marginBottom:8 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
       )}

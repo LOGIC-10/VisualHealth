@@ -17,10 +17,12 @@ async function init() {
       filename TEXT NOT NULL,
       mimetype TEXT NOT NULL,
       size BIGINT NOT NULL,
+      title TEXT,
       features JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_records(user_id);
+    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS title TEXT;
   `);
 }
 
@@ -122,7 +124,7 @@ app.get('/records', async (req, res) => {
     const payload = verify(req);
     const userId = payload?.sub;
     const { rows } = await pool.query(
-      'SELECT id, media_id, filename, mimetype, size, created_at FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
+      'SELECT id, media_id, filename, title, mimetype, size, created_at FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
       [userId]
     );
     res.json(rows);
@@ -136,13 +138,31 @@ app.get('/records/:id', async (req, res) => {
     const payload = verify(req);
     const userId = payload?.sub;
     const { rows } = await pool.query(
-      'SELECT id, media_id, filename, mimetype, size, created_at, features FROM analysis_records WHERE id=$1 AND user_id=$2',
+      'SELECT id, media_id, filename, title, mimetype, size, created_at, features FROM analysis_records WHERE id=$1 AND user_id=$2',
       [req.params.id, userId]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     res.json(rows[0]);
   } catch (e) {
     res.status(401).json({ error: 'unauthorized' });
+  }
+});
+
+app.patch('/records/:id', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    const { title } = req.body || {};
+    if (typeof title !== 'string') return res.status(400).json({ error: 'title required' });
+    const { rows } = await pool.query(
+      'UPDATE analysis_records SET title=$1 WHERE id=$2 AND user_id=$3 RETURNING id, media_id, filename, title, mimetype, size, created_at',
+      [title, req.params.id, userId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'update failed' });
   }
 });
 

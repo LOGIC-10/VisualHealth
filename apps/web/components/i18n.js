@@ -36,6 +36,8 @@ export const dict = {
     NoRecords: 'No analysis records yet.',
     Back: '← Back',
     Features: 'Features',
+    Title: 'Title',
+    EditTitle: 'Edit title',
     Duration: 'Duration (s)',
     SampleRate: 'Sample Rate',
     RMS: 'RMS',
@@ -47,6 +49,7 @@ export const dict = {
     Flatness: 'Flatness',
     Flux: 'Flux',
     CrestFactor: 'Crest Factor',
+    Cancel: 'Cancel',
     Loading: 'Loading...',
     // Community
     CommunityTitle: 'Community',
@@ -95,6 +98,8 @@ export const dict = {
     NoRecords: '还没有分析记录。',
     Back: '← 返回',
     Features: '特征',
+    Title: '标题',
+    EditTitle: '编辑标题',
     Duration: '时长（秒）',
     SampleRate: '采样率',
     RMS: '均方根（RMS）',
@@ -106,6 +111,7 @@ export const dict = {
     Flatness: '谱平坦度',
     Flux: '谱流量',
     CrestFactor: '峰因子',
+    Cancel: '取消',
     Loading: '加载中…',
     // Community
     CommunityTitle: '社区',
@@ -152,4 +158,3 @@ export function setGlobalLang(lang) {
   const ev = new CustomEvent('vh_lang_change', { detail: lang });
   window.dispatchEvent(ev);
 }
-

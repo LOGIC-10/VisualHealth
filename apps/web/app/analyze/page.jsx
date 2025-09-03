@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
+const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
 
 export default function AnalyzePage() {
   const { t } = useI18n();
@@ -69,6 +70,30 @@ export default function AnalyzePage() {
         });
         const saved = await rec.json();
         if (saved?.id) setSavedId(saved.id);
+
+        // Precompute advanced & spectrogram and patch record (cache)
+        try {
+          const payload = { sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) };
+          const [advResp, specResp] = await Promise.all([
+            fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }),
+            fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
+          ]);
+          let specId = null; let adv = null;
+          if (specResp.ok) {
+            const imgBlob = await specResp.blob();
+            const fdu = new FormData();
+            fdu.append('file', new File([imgBlob], 'spectrogram.png', { type:'image/png' }));
+            const up2 = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
+            const j2 = await up2.json();
+            if (j2?.id) specId = j2.id;
+          }
+          if (advResp.ok) adv = await advResp.json();
+          if (saved?.id && (adv || specId)) {
+            await fetch((process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004') + `/records/${saved.id}`, {
+              method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: adv || null, specMediaId: specId || null })
+            });
+          }
+        } catch {}
       } catch (err) {
         console.warn('persist failed', err);
       } finally {

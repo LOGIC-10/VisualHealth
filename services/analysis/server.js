@@ -18,11 +18,15 @@ async function init() {
       mimetype TEXT NOT NULL,
       size BIGINT NOT NULL,
       title TEXT,
+      adv JSONB,
+      spec_media_id UUID,
       features JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_records(user_id);
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS adv JSONB;
+    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS spec_media_id UUID;
   `);
 }
 
@@ -124,7 +128,7 @@ app.get('/records', async (req, res) => {
     const payload = verify(req);
     const userId = payload?.sub;
     const { rows } = await pool.query(
-      'SELECT id, media_id, filename, title, mimetype, size, created_at FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
+      'SELECT id, media_id, filename, title, mimetype, size, created_at, (adv IS NOT NULL) AS has_adv, (spec_media_id IS NOT NULL) AS has_spec FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
       [userId]
     );
     res.json(rows);
@@ -138,7 +142,7 @@ app.get('/records/:id', async (req, res) => {
     const payload = verify(req);
     const userId = payload?.sub;
     const { rows } = await pool.query(
-      'SELECT id, media_id, filename, title, mimetype, size, created_at, features FROM analysis_records WHERE id=$1 AND user_id=$2',
+      'SELECT id, media_id, filename, title, mimetype, size, created_at, features, adv, spec_media_id FROM analysis_records WHERE id=$1 AND user_id=$2',
       [req.params.id, userId]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
@@ -152,11 +156,11 @@ app.patch('/records/:id', async (req, res) => {
   try {
     const payload = verify(req);
     const userId = payload?.sub;
-    const { title } = req.body || {};
-    if (typeof title !== 'string') return res.status(400).json({ error: 'title required' });
+    const { title, adv, specMediaId } = req.body || {};
+    if (title==null && adv==null && specMediaId==null) return res.status(400).json({ error: 'no fields' });
     const { rows } = await pool.query(
-      'UPDATE analysis_records SET title=$1 WHERE id=$2 AND user_id=$3 RETURNING id, media_id, filename, title, mimetype, size, created_at',
-      [title, req.params.id, userId]
+      'UPDATE analysis_records SET title=COALESCE($1,title), adv=COALESCE($2,adv), spec_media_id=COALESCE($3,spec_media_id) WHERE id=$4 AND user_id=$5 RETURNING id, media_id, filename, title, mimetype, size, created_at, adv, spec_media_id',
+      [title ?? null, adv ?? null, specMediaId ?? null, req.params.id, userId]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     res.json(rows[0]);

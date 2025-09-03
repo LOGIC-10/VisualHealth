@@ -207,3 +207,264 @@ async def compute_features_pcm(
         "peak": peak,
         "crestFactor": crest,
     }
+
+
+def _moving_average(x: np.ndarray, win: int):
+    if win <= 1:
+        return x.copy()
+    win = int(win)
+    c = np.cumsum(np.insert(np.abs(x), 0, 0))
+    m = (c[win:] - c[:-win]) / float(win)
+    # pad to original length
+    pad_left = win // 2
+    pad_right = len(x) - len(m) - pad_left
+    return np.pad(m, (pad_left, pad_right), mode='edge')
+
+
+def _find_peaks(x: np.ndarray, distance: int, threshold: float):
+    peaks = []
+    n = len(x)
+    i = distance
+    while i < n - distance:
+        seg = x[i - distance:i + distance + 1]
+        if x[i] == seg.max() and x[i] >= threshold:
+            peaks.append(i)
+            i += distance
+        i += 1
+    return peaks
+
+
+@app.post('/pcg_advanced')
+async def pcg_advanced(
+    sampleRate: int = Body(...),
+    pcm: List[float] = Body(...)
+):
+    # Heuristic CPU-only PCG analysis modules (baseline, non-diagnostic)
+    sr = int(sampleRate)
+    y = np.asarray(pcm, dtype=np.float32)
+    n = len(y)
+    if n == 0 or sr <= 0:
+        return JSONResponse({"error": "empty"}, status_code=400)
+
+    dur = n / sr
+    # Envelope
+    env = _moving_average(y, max(1, int(0.05 * sr)))
+    env = env / (np.max(np.abs(env)) + 1e-9)
+
+    # HR estimation by autocorrelation of envelope
+    ac = np.correlate(env, env, mode='full')[n-1: n-1 + int(1.5*sr)]
+    min_lag = int(0.4 * sr)  # 150 bpm upper
+    max_lag = int(1.5 * sr)  # 40 bpm lower
+    peak_lag = None
+    if max_lag > min_lag + 5:
+        lag_seg = ac[min_lag:max_lag]
+        lag_idx = np.argmax(lag_seg)
+        peak_lag = min_lag + lag_idx
+    hr_bpm = 60.0 * sr / peak_lag if peak_lag else None
+
+    # Peak picking and S1/S2 assignment
+    thr = max(0.2, float(np.median(env) + 0.5 * np.std(env)))
+    min_dist = int(0.2 * sr)
+    cand = _find_peaks(env, distance=min_dist, threshold=thr)
+    # Assign as alternating S1/S2 using expected cycle
+    s1_idx = []
+    s2_idx = []
+    if hr_bpm:
+        cycle = sr * 60.0 / hr_bpm
+    else:
+        cycle = sr * 0.8
+    i = 0
+    last_was_s1 = True
+    while i < len(cand):
+        if not s1_idx:
+            s1_idx.append(cand[i]); last_was_s1 = True; i += 1; continue
+        dt = cand[i] - (s1_idx[-1] if last_was_s1 else s2_idx[-1])
+        if dt < 0.7 * cycle:  # likely within the same cycle -> S2
+            if last_was_s1:
+                s2_idx.append(cand[i]); last_was_s1 = False
+            else:
+                s1_idx.append(cand[i]); last_was_s1 = True
+        else:  # new cycle -> S1
+            s1_idx.append(cand[i]); last_was_s1 = True
+        i += 1
+
+    s1_idx = sorted(set(s1_idx))
+    s2_idx = sorted(set(s2_idx))
+
+    # Cycle metrics
+    rr = []
+    systoles = []
+    diastoles = []
+    if len(s1_idx) >= 2:
+        rr = np.diff(np.array(s1_idx)) / sr
+    # systole: S1 -> nearest S2 after S1 within 0.7*cycle
+    for s1 in s1_idx:
+        later_s2 = [p for p in s2_idx if p > s1]
+        if not later_s2:
+            continue
+        s2 = later_s2[0]
+        st = (s2 - s1) / sr
+        if st > 0 and st < 0.8:
+            systoles.append(st)
+    # diastole: S2 -> next S1
+    for s2 in s2_idx:
+        next_s1 = [p for p in s1_idx if p > s2]
+        if not next_s1:
+            continue
+        d = (next_s1[0] - s2) / sr
+        if d > 0:
+            diastoles.append(d)
+    ds_ratio = (np.mean(diastoles) / np.mean(systoles)) if (len(systoles) and len(diastoles)) else None
+
+    # S2 split (A2-P2) in 12–80 ms window: double-peak on high-freq envelope
+    def s2_split_for(idx):
+        w = int(0.12 * sr)
+        s = max(0, idx - int(0.02*sr))
+        e = min(n, idx + w)
+        seg = y[s:e]
+        # high-frequency emphasis via first difference
+        hf = _moving_average(np.abs(np.diff(seg, prepend=seg[:1])), max(1, int(0.004*sr)))
+        # find two peaks between 12-80ms after S2
+        start = idx + int(0.012*sr) - s
+        end = min(len(hf), idx + int(0.08*sr) - s)
+        if end - start < 3:
+            return None
+        sub = hf[start:end]
+        # largest two peaks
+        if len(sub) < 3: return None
+        p1 = np.argmax(sub)
+        sub2 = sub.copy(); sub2[max(0,p1-3):p1+4] = 0
+        p2 = np.argmax(sub2)
+        if sub[p2] < 0.3 * sub[p1]:
+            return None
+        dms = abs(p2 - p1) * 1000.0 / sr
+        if 12 <= dms <= 80:
+            return dms
+        return None
+
+    s2_splits = [s2_split_for(i) for i in s2_idx]
+    s2_splits = [v for v in s2_splits if v is not None]
+
+    # A2-OS: 40–120 ms after S2, transient detection
+    def a2_os_for(idx):
+        s = idx + int(0.04*sr)
+        e = idx + int(0.12*sr)
+        if s >= n: return None
+        e = min(n, e)
+        seg = np.abs(y[s:e])
+        if len(seg) < 5: return None
+        peak_i = np.argmax(seg)
+        if seg[peak_i] > (np.median(seg) + 3*np.std(seg)):
+            return (peak_i) * 1000.0 / sr
+        return None
+
+    a2_os = [a2_os_for(i) for i in s2_idx]
+    a2_os = [v for v in a2_os if v is not None]
+
+    # Intensities
+    s1_int = float(np.mean([env[i] for i in s1_idx])) if s1_idx else None
+    s2_int = float(np.mean([env[i] for i in s2_idx])) if s2_idx else None
+
+    # Murmur metrics: high-frequency energy ratio in systole/diastole (150–600 Hz)
+    def band_energy(start_idx, end_idx):
+        if end_idx <= start_idx: return 0.0
+        seg = y[start_idx:end_idx]
+        if len(seg) <= 16: return 0.0
+        # simple Welch-like: split into frames
+        hop = max(16, int(0.01*sr)); win = max(32, int(0.02*sr))
+        total = 0.0
+        frames = 0
+        for k in range(0, len(seg)-win, hop):
+            wseg = seg[k:k+win] * np.hanning(win)
+            sp = np.fft.rfft(wseg)
+            freqs = np.fft.rfftfreq(win, 1.0/sr)
+            mask = (freqs >= 150) & (freqs <= 600)
+            total += float(np.sum(np.abs(sp[mask])**2))
+            frames += 1
+        return total / (frames+1e-9)
+
+    sys_energy = None
+    dia_energy = None
+    if systoles and s1_idx and s2_idx:
+        pairs = min(len(s1_idx), len(s2_idx))
+        es = []; ed = []
+        for j in range(pairs):
+            s1 = s1_idx[j]
+            s2 = s2_idx[j] if j < len(s2_idx) else None
+            if s2 and s2 > s1:
+                es.append(band_energy(s1, s2))
+                next_s1 = s1_idx[j+1] if j+1 < len(s1_idx) else None
+                if next_s1 and next_s1 > s2:
+                    ed.append(band_energy(s2, next_s1))
+        if es: sys_energy = float(np.mean(es))
+        if ed: dia_energy = float(np.mean(ed))
+
+    # Systolic shape: rising / falling / flat based on envelope trend over systole
+    sys_shape = None
+    if systoles and s1_idx and s2_idx:
+        slopes = []
+        pairs = min(len(s1_idx), len(s2_idx))
+        for j in range(pairs):
+            s1 = s1_idx[j]; s2 = s2_idx[j]
+            if s2 > s1:
+                seg = env[s1:s2]
+                if len(seg) > 5:
+                    coef = np.polyfit(np.linspace(0,1,len(seg)), seg, 1)[0]
+                    slopes.append(coef)
+        if slopes:
+            m = float(np.mean(slopes))
+            if m > 0.02: sys_shape = 'crescendo'
+            elif m < -0.02: sys_shape = 'decrescendo'
+            else: sys_shape = 'plateau'
+
+    # QC: SNR (simple band ratio), motion/resp artifacts (LF proportion), usable pct (envelope > thresh)
+    # SNR: 25–400 Hz vs 0–25 Hz power
+    def band_power_whole(lo, hi):
+        win = 1024 if n >= 2048 else max(128, 1<<(int(np.log2(n)) - 1))
+        hop = win//2
+        total=0.0; frames=0
+        for k in range(0, n-win, hop):
+            wseg = y[k:k+win]*np.hanning(win)
+            sp = np.fft.rfft(wseg)
+            freqs = np.fft.rfftfreq(win,1.0/sr)
+            mask=(freqs>=lo)&(freqs<=hi)
+            total += float(np.sum(np.abs(sp[mask])**2)); frames+=1
+        return total/(frames+1e-9)
+    sig = band_power_whole(25,400)
+    noise = band_power_whole(0,25)
+    snr_db = 10.0*np.log10((sig+1e-9)/(noise+1e-9))
+
+    # motion/resp artifacts proportion: LF envelope variance
+    env_lf = _moving_average(env, max(1,int(0.3*sr)))
+    art = np.mean((env_lf - np.median(env_lf))**2)
+    base = np.mean((env - np.median(env))**2) + 1e-9
+    motion_pct = float(min(1.0, max(0.0, art/base)))
+
+    usable_pct = float(np.mean(env > (np.median(env)+0.1*np.std(env))))
+
+    return {
+        'durationSec': dur,
+        'hrBpm': float(hr_bpm) if hr_bpm else None,
+        'rrMeanSec': float(np.mean(rr)) if len(rr) else None,
+        'rrStdSec': float(np.std(rr)) if len(rr) else None,
+        'systoleMs': float(np.mean(systoles)*1000.0) if len(systoles) else None,
+        'diastoleMs': float(np.mean(diastoles)*1000.0) if len(diastoles) else None,
+        'dsRatio': float(ds_ratio) if ds_ratio else None,
+        's2SplitMs': float(np.median(s2_splits)) if len(s2_splits) else None,
+        'a2OsMs': float(np.median(a2_os)) if len(a2_os) else None,
+        's1Intensity': s1_int,
+        's2Intensity': s2_int,
+        'sysHighFreqEnergy': sys_energy,
+        'diaHighFreqEnergy': dia_energy,
+        'sysShape': sys_shape,
+        'qc': {
+            'snrDb': float(snr_db),
+            'motionPct': motion_pct,
+            'usablePct': usable_pct
+        },
+        # limited events for UI (indices truncated)
+        'events': {
+            's1': s1_idx[:200],
+            's2': s2_idx[:200]
+        }
+    }

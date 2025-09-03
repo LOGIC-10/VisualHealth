@@ -29,6 +29,9 @@ export default function AnalysisDetail({ params }) {
   const isDraggingRef = useRef(false);
   const pinchRef = useRef({ active:false, id1:null, id2:null, startDist:0, startPx:0, startScroll:0 });
   const [specUrl, setSpecUrl] = useState(null);
+  const [adv, setAdv] = useState(null);
+  const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
 
@@ -41,6 +44,14 @@ export default function AnalysisDetail({ params }) {
       setMeta(rec);
       setFeatures(rec.features || null);
       setTitle(rec.title || rec.filename || '');
+      // if cached advanced or spectrogram exist, load immediately
+      if (rec.adv) setAdv(rec.adv);
+      if (rec.spec_media_id) {
+        try {
+          const fr = await fetch(MEDIA_BASE + `/file/${rec.spec_media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+          if (fr.ok) { const b = await fr.blob(); setSpecUrl(URL.createObjectURL(b)); }
+        } catch {}
+      }
     })();
   }, [id, token]);
 
@@ -55,6 +66,7 @@ export default function AnalysisDetail({ params }) {
       setAudioUrl(url);
       // compute extra features once (off-UI path)
       try {
+        setLoading(s=>({ ...s, decode:true, extra:true, adv:true, spec:true })); setProgress(0);
         const arr = await blob.arrayBuffer();
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const buf = await audioCtx.decodeAudioData(arr.slice(0));
@@ -64,20 +76,45 @@ export default function AnalysisDetail({ params }) {
         const ratio = Math.max(1, Math.floor(buf.sampleRate / targetSR));
         const ds = new Float32Array(Math.ceil(ch.length / ratio));
         for (let i = 0; i < ds.length; i++) ds[i] = ch[i * ratio] || 0;
-        const resp = await fetch(VIZ_BASE + '/features_pcm', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds) })
-        });
-        if (resp.ok) setExtra(await resp.json());
-        // spectrogram image (static, colored, with axes)
-        const specResp = await fetch(VIZ_BASE + '/spectrogram_pcm', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds), maxFreq: 2000, width: 1200, height: 320 })
-        });
-        if (specResp.ok) {
-          const imgBlob = await specResp.blob();
-          setSpecUrl(URL.createObjectURL(imgBlob));
-        }
+        setLoading(s=>({ ...s, decode:false })); setProgress(p=>p+0.25);
+        const payload = { sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds) };
+        // run in parallel
+        const featuresP = (async ()=>{
+          const resp = await fetch(VIZ_BASE + '/features_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+          if (resp.ok) setExtra(await resp.json());
+          setLoading(s=>({ ...s, extra:false })); setProgress(p=>p+0.25);
+        })();
+        const advP = (async ()=>{
+          const resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+          if (resp.ok) setAdv(await resp.json());
+          setLoading(s=>({ ...s, adv:false })); setProgress(p=>p+0.25);
+        })();
+        const width = Math.max(800, Math.min(1400, Math.floor((typeof window!=='undefined'? window.innerWidth:1200) - 80)));
+        const specP = (async ()=>{
+          const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width, height: 320 }) });
+          if (resp.ok) {
+            const imgBlob = await resp.blob();
+            setSpecUrl(URL.createObjectURL(imgBlob));
+            // cache spectrogram into media and patch record
+            try {
+              const fd = new FormData();
+              fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
+              const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
+              const j = await up.json();
+              if (j?.id) {
+                await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ specMediaId: j.id }) });
+              }
+            } catch {}
+          }
+          setLoading(s=>({ ...s, spec:false })); setProgress(p=>p+0.25);
+        })();
+        await Promise.allSettled([featuresP, advP, specP]);
+        // cache adv to record if not present
+        try {
+          if (!meta?.adv && adv) {
+            await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv }) });
+          }
+        } catch {}
       } catch {}
     })();
   }, [meta, token]);
@@ -315,11 +352,18 @@ export default function AnalysisDetail({ params }) {
           </div>
         )}
       </div>
+      {/* Sub-title: Waveform */}
+      <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px' }}>{t('Waveform')}</div>
       {meta && (
         <div style={{ color:'#64748b', fontSize:13, marginBottom:8 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
       )}
 
       {/* Waveform (client-rendered, smooth) */}
+      { (loading.decode || loading.extra || loading.adv || loading.spec) && (
+        <div style={{ marginTop:8, height:6, background:'#e5e7eb', borderRadius:6, overflow:'hidden' }}>
+          <div style={{ width: `${Math.round(Math.min(1, progress)*100)}%`, height:'100%', background:'#2563eb', transition:'width 200ms linear' }} />
+        </div>
+      )}
       <div
         ref={waveWrapRef}
         onMouseDown={onMouseDown}
@@ -337,16 +381,51 @@ export default function AnalysisDetail({ params }) {
         <audio ref={audioRef} controls src={audioUrl} style={{ marginTop: 8, width:'100%' }} />
       )}
 
+      {/* Sub-title: Spectrogram */}
+      <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Spectrogram')}</div>
       {/* Static spectrogram below playback bar (colored, with axes) */}
-      {specUrl && (
-        <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden' }}>
-          <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />
-        </div>
+      <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', minHeight: 200, position:'relative' }}>
+        {!specUrl && (
+          <div style={{ position:'absolute', inset:0, display:'grid', placeItems:'center', color:'#64748b' }}>
+            <div className="vh-spin" />
+          </div>
+        )}
+        {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
+      </div>
+      <style>{`.vh-spin{width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Clinical PCG Analysis */}
+      {adv && (
+        <>
+          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('ClinicalAnalysis')}</div>
+          <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+            <div><b>{t('HeartRate')}:</b> {adv.hrBpm ? adv.hrBpm.toFixed(0) : '—'}</div>
+            <div><b>{t('RRMean')}:</b> {adv.rrMeanSec?.toFixed?.(3) || '—'}</div>
+            <div><b>{t('RRStd')}:</b> {adv.rrStdSec?.toFixed?.(3) || '—'}</div>
+            <div><b>{t('Systole')}:</b> {adv.systoleMs?.toFixed?.(0) || '—'}</div>
+            <div><b>{t('Diastole')}:</b> {adv.diastoleMs?.toFixed?.(0) || '—'}</div>
+            <div><b>{t('DSRatio')}:</b> {adv.dsRatio?.toFixed?.(2) || '—'}</div>
+            <div><b>{t('S2Split')}:</b> {adv.s2SplitMs?.toFixed?.(1) || '—'}</div>
+            <div><b>{t('A2OS')}:</b> {adv.a2OsMs?.toFixed?.(1) || '—'}</div>
+            <div><b>{t('S1Intensity')}:</b> {adv.s1Intensity?.toFixed?.(3) || '—'}</div>
+            <div><b>{t('S2Intensity')}:</b> {adv.s2Intensity?.toFixed?.(3) || '—'}</div>
+            <div><b>{t('SysHF')}:</b> {adv.sysHighFreqEnergy ? adv.sysHighFreqEnergy.toFixed(2) : '—'}</div>
+            <div><b>{t('DiaHF')}:</b> {adv.diaHighFreqEnergy ? adv.diaHighFreqEnergy.toFixed(2) : '—'}</div>
+            <div><b>{t('SysShape')}:</b> {adv.sysShape || '—'}</div>
+            <div><b>{t('SNR')}:</b> {adv.qc?.snrDb?.toFixed?.(1) || '—'}</div>
+            <div><b>{t('MotionPct')}:</b> {adv.qc ? Math.round(adv.qc.motionPct*100) : '—'}</div>
+            <div><b>{t('UsablePct')}:</b> {adv.qc ? Math.round(adv.qc.usablePct*100) : '—'}</div>
+          </div>
+            <div style={{ gridColumn:'1 / -1', marginTop: 6, fontSize: 12, color:'#64748b' }}>{t('Disclaimer')}</div>
+          </div>
+        </>
       )}
 
       {(features || extra) && (
-        <div style={{ marginTop: 16, background: '#f8fafc', padding: 16, borderRadius: 12 }}>
-          <h3>{t('Features')}</h3>
+        <>
+          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Features')}</div>
+          <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
             {features && (
               <>
@@ -368,7 +447,8 @@ export default function AnalysisDetail({ params }) {
               </>
             )}
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

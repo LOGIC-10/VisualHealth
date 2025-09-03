@@ -1,0 +1,100 @@
+version: "3.9"
+
+services:
+  frontend:
+    build: ./apps/web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_AUTH=http://localhost:4001
+      - NEXT_PUBLIC_API_MEDIA=http://localhost:4003
+      - NEXT_PUBLIC_API_ANALYSIS=http://localhost:4004
+      - NEXT_PUBLIC_API_FEED=http://localhost:4005
+    depends_on:
+      - auth-service
+      - media-service
+      - analysis-service
+      - feed-service
+
+  auth-service:
+    build: ./services/auth
+    environment:
+      - PORT=4001
+      - DATABASE_URL=postgres://auth_user:auth_pass@auth-db:5432/auth_db
+      - JWT_SECRET=dev_jwt_secret_change_me
+      - BCRYPT_ROUNDS=10
+    ports:
+      - "4001:4001"
+    depends_on:
+      - auth-db
+
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=auth_user
+      - POSTGRES_PASSWORD=auth_pass
+      - POSTGRES_DB=auth_db
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  media-service:
+    build: ./services/media
+    environment:
+      - PORT=4003
+      - DATABASE_URL=postgres://media_user:media_pass@media-db:5432/media_db
+      - MEDIA_MASTER_KEY_BASE64=ZGV2X21hc3Rlcl9rZXlfMzJieXRlcw==
+      - AUTH_BASE=http://auth-service:4001
+    ports:
+      - "4003:4003"
+    depends_on:
+      - media-db
+      - auth-service
+
+  media-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=media_user
+      - POSTGRES_PASSWORD=media_pass
+      - POSTGRES_DB=media_db
+    volumes:
+      - media_db_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+
+  analysis-service:
+    build: ./services/analysis
+    environment:
+      - PORT=4004
+    ports:
+      - "4004:4004"
+
+  feed-service:
+    build: ./services/feed
+    environment:
+      - PORT=4005
+      - DATABASE_URL=postgres://feed_user:feed_pass@feed-db:5432/feed_db
+      - AUTH_BASE=http://auth-service:4001
+    ports:
+      - "4005:4005"
+    depends_on:
+      - feed-db
+      - auth-service
+
+  feed-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=feed_user
+      - POSTGRES_PASSWORD=feed_pass
+      - POSTGRES_DB=feed_db
+    volumes:
+      - feed_db_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+
+volumes:
+  auth_db_data:
+  media_db_data:
+  feed_db_data:
+

@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useI18n } from '../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
-import Spectrogram from 'wavesurfer.js/dist/plugins/spectrogram.esm.js';
+// Spectrogram plugin removed; use server-rendered demo spectrogram instead
 
 function makeHeartbeatWav(seconds=6, sampleRate=8000){
   const sr = sampleRate; const N = seconds*sr|0; const ch = new Float32Array(N);
@@ -17,22 +17,122 @@ function makeHeartbeatWav(seconds=6, sampleRate=8000){
   return new Blob([dv], { type:'audio/wav' });
 }
 
+const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
+
 function Demo(){
-  const waveRef = useRef(null); const specRef = useRef(null); const audioRef = useRef(null); const wsRef = useRef(null); const urlRef = useRef('');
+  const waveWrapRef = useRef(null); const audioRef = useRef(null); const wsRef = useRef(null); const urlRef = useRef('');
+  const [pxPerSec, setPxPerSec] = useState(120);
+  const [duration, setDuration] = useState(0);
+  const [hovered, setHovered] = useState(false);
+  const [specUrl, setSpecUrl] = useState(null);
+
   useEffect(()=>{
-    const blob = makeHeartbeatWav(6, 8000);
+    const blob = makeHeartbeatWav(8, 8000);
     const url = URL.createObjectURL(blob); urlRef.current = url;
     if (audioRef.current){ audioRef.current.src = url; audioRef.current.load(); }
-    const ws = WaveSurfer.create({ container: waveRef.current, media: audioRef.current, height: 96, minPxPerSec: 120, waveColor:'#94a3b8', progressColor:'#111827', normalize:true });
-    ws.registerPlugin(Spectrogram.create({ container: specRef.current, height: 160, labels:false, frequencyMin:0, frequencyMax:2000 }));
+    // Setup WaveSurfer
+    const ws = WaveSurfer.create({
+      container: waveWrapRef.current,
+      media: audioRef.current,
+      height: 120,
+      minPxPerSec: pxPerSec,
+      waveColor:'#94a3b8',
+      progressColor:'#111827',
+      normalize:true,
+      interact:false,
+    });
+    ws.on('ready', () => {
+      const d = ws.getDuration(); setDuration(d);
+      const wrap = waveWrapRef.current; const cw = wrap?.clientWidth || 800;
+      const minPx = d > 0 ? Math.max(80, cw / d) : 120;
+      setPxPerSec(minPx); ws.zoom(minPx);
+    });
     wsRef.current = ws;
-    return ()=>{ try{ws.destroy();}catch{} URL.revokeObjectURL(urlRef.current); };
+
+    // Prepare server-rendered spectrogram for the same demo signal
+    (async () => {
+      try {
+        // Decode the blob back to PCM (small clip so OK)
+        const arr = await (await fetch(url)).arrayBuffer();
+        const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+        const ctx = new AC(); const buf = await ctx.decodeAudioData(arr.slice(0));
+        const ch = buf.getChannelData(0);
+        const payload = { sampleRate: buf.sampleRate, pcm: Array.from(ch) };
+        const width = Math.max(800, Math.min(1400, Math.floor((typeof window!=='undefined'? window.innerWidth:1200) - 80)));
+        const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width, height: 280 }) });
+        if (resp.ok) { const b = await resp.blob(); setSpecUrl(URL.createObjectURL(b)); }
+        try { await ctx.close?.(); } catch {}
+      } catch {}
+    })();
+
+    return ()=>{ try{ws.destroy();}catch{} if (urlRef.current) URL.revokeObjectURL(urlRef.current); if (specUrl) URL.revokeObjectURL(specUrl); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
+
+  const onWheel = useCallback((e) => {
+    const wrap = waveWrapRef.current; const ws = wsRef.current; if (!wrap || !ws || !duration) return;
+    e.preventDefault(); e.stopPropagation();
+    const rect = wrap.getBoundingClientRect();
+    const isZoom = e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > Math.abs(e.deltaX);
+    const current = pxPerSec; const minPx = duration > 0 ? (rect.width / duration) : 10;
+    const totalW = wrap.scrollWidth || (current * duration);
+    const secPerPx = (duration && totalW) ? (duration / totalW) : (1 / current);
+    if (isZoom) {
+      const x = e.clientX - rect.left; const frac = Math.max(0, Math.min(1, x / rect.width));
+      const pivotSec = (wrap.scrollLeft + x) * secPerPx;
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      const next = Math.max(minPx, Math.min(5000, current * (1 / factor)));
+      setPxPerSec(next); ws.zoom(next);
+      const newScrollLeft = Math.max(0, pivotSec * next - frac * rect.width);
+      const maxScroll = Math.max(0, next * duration - rect.width);
+      requestAnimationFrame(() => { wrap.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft)); });
+    } else {
+      const nextScroll = wrap.scrollLeft + (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
+      const maxScroll = Math.max(0, current * duration - rect.width);
+      wrap.scrollLeft = Math.max(0, Math.min(maxScroll, nextScroll));
+    }
+  }, [duration, pxPerSec]);
+
+  useEffect(() => {
+    const el = waveWrapRef.current; if (!el) return;
+    el.addEventListener('wheel', onWheel, { passive:false });
+    const preventGesture = (ev)=>{ ev.preventDefault(); ev.stopPropagation(); };
+    el.addEventListener('gesturestart', preventGesture, { passive:false });
+    el.addEventListener('gesturechange', preventGesture, { passive:false });
+    el.style.overscrollBehavior = 'contain';
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', preventGesture);
+      el.removeEventListener('gesturechange', preventGesture);
+    };
+  }, [onWheel]);
+
+  useEffect(() => {
+    function onKey(ev){
+      if (!hovered) return;
+      if (ev.code === 'Space') { ev.preventDefault(); ev.stopPropagation(); const a = audioRef.current; if (a){ if (a.paused) a.play(); else a.pause(); } }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hovered]);
+
   return (
     <div>
-      <div ref={waveRef} style={{ border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', background:'#fff' }} />
-      <div ref={specRef} style={{ marginTop:8, border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', background:'#fff' }} />
+      <div
+        ref={waveWrapRef}
+        tabIndex={0}
+        onMouseEnter={()=>setHovered(true)}
+        onMouseLeave={()=>setHovered(false)}
+        style={{ border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', background:'#fff' }}
+      />
+      <div style={{ marginTop:8, border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', background:'#fff', minHeight: 160 }}>
+        {!specUrl && (
+          <div style={{ height:160, display:'grid', placeItems:'center', color:'#64748b' }}><div className="vh-spin" /></div>
+        )}
+        {specUrl && <img src={specUrl} alt="demo spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
+      </div>
       <audio ref={audioRef} controls style={{ marginTop:8, width:'100%' }} />
+      <style>{`.vh-spin{width:22px;height:22px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }

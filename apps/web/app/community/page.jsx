@@ -76,8 +76,8 @@ export default function CommunityPage() {
           return (
             <a key={p.id} href={`/community/${p.id}`} style={{ textDecoration: 'none', color: 'inherit', display:'block' }}>
               <div style={{ border: '1px solid #e5e7eb', borderRadius: 16, overflow: 'hidden', background: '#fff', display:'flex', flexDirection:'column' }}>
-                {/* Fixed-ratio media area (4:5 like Xiaohongshu) */}
-                <div style={{ position:'relative', width:'100%', paddingTop: '125%', background:'#f1f5f9' }}>
+                {/* Fixed-ratio media area (16:9) */}
+                <div style={{ position:'relative', width:'100%', paddingTop: '56.25%', background:'#f1f5f9' }}>
                   {cover ? (
                     <img src={cover} alt="cover" loading="lazy" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
                   ) : (

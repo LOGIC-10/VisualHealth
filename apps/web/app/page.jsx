@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
 import Spectrogram from 'wavesurfer.js/dist/plugins/spectrogram.esm.js';
@@ -39,6 +39,48 @@ function Demo(){
 
 export default function HomePage() {
   const { t } = useI18n();
+  const [guide, setGuide] = useState(false);
+  const [token, setToken] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState({ total: 0, done: 0 });
+  const fileInputRef = useRef(null);
+  const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
+  const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+  useEffect(()=>{ setToken(localStorage.getItem('vh_token')); },[]);
+
+  function openGuide(){ if(!token){ window.location.href='/auth'; return; } setGuide(true); }
+  function pickFiles(){ fileInputRef.current?.click(); }
+
+  async function computeFeatures(file){
+    const srTarget = 8000; const arrayBuffer = await file.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    const ch = buf.getChannelData(0);
+    const ratio = Math.max(1, Math.floor(buf.sampleRate / srTarget));
+    const ds = new Float32Array(Math.ceil(ch.length / ratio));
+    for (let i=0;i<ds.length;i++) ds[i] = ch[i*ratio] || 0;
+    const resp = await fetch(ANALYSIS_BASE + '/analyze', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate: Math.round(buf.sampleRate/ratio), pcm: Array.from(ds) }) });
+    return await resp.json();
+  }
+
+  async function onFiles(e){
+    const fl = Array.from(e.target.files || []).slice(0, 10);
+    if (!fl.length) return;
+    setBusy(true); setProgress({ total: fl.length, done: 0 });
+    for (let i=0;i<fl.length;i++){
+      try{
+        const f = fl[i];
+        const features = await computeFeatures(f);
+        const fd = new FormData(); fd.append('file', f);
+        const up = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
+        const meta = await up.json(); if(!meta?.id) throw new Error('upload failed');
+        await fetch(ANALYSIS_BASE + '/records', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features }) });
+      }catch(err){ console.warn('create failed', err); }
+      setProgress(p=>({ ...p, done: p.done+1 }));
+    }
+    setBusy(false); setGuide(false);
+    window.location.href = '/analysis';
+  }
   return (
     <div>
       {/* 1. Hero */}
@@ -47,7 +89,7 @@ export default function HomePage() {
           <h1 style={{ fontSize: 56, lineHeight: 1.05, margin: 0 }}>{t('HomeHeroTitle')}</h1>
           <p style={{ fontSize: 20, marginTop: 16 }}>{t('HomeHeroDesc')}</p>
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-            <a href="/analysis/new" style={{ padding: '12px 16px', background: '#111', color: '#fff', borderRadius: 12, textDecoration: 'none' }}>{t('GetStarted')}</a>
+            <button onClick={openGuide} style={{ padding: '12px 16px', background: '#111', color: '#fff', borderRadius: 12, textDecoration: 'none', cursor:'pointer' }}>{t('GetStarted')}</button>
             <a href="/community" style={{ padding: '12px 16px', background: '#e5e7eb', color: '#111', borderRadius: 12, textDecoration: 'none' }}>{t('ExploreCommunity')}</a>
           </div>
         </div>
@@ -110,6 +152,28 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Guide Modal */}
+      {guide && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'grid', placeItems:'center', zIndex:50 }}>
+          <div style={{ width: 520, maxWidth:'90vw', background:'#fff', borderRadius:16, boxShadow:'0 10px 40px rgba(0,0,0,0.2)', padding:20 }}>
+            <h3 style={{ margin:'6px 0 8px', fontSize:22 }}>{t('GuideTitle')}</h3>
+            <p style={{ color:'#475569', margin:'0 0 12px' }}>{t('GuideDesc')}</p>
+            <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button onClick={()=>setGuide(false)} style={{ padding:'8px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>{t('GuideCancel')}</button>
+              <button onClick={()=>fileInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor:'pointer' }}>{t('GuideUpload')}</button>
+            </div>
+            {busy && (
+              <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:8, color:'#64748b' }}>
+                <div className="vh-spin" />
+                <div>Uploading {progress.done} / {progress.total} …</div>
+              </div>
+            )}
+            <input ref={fileInputRef} type="file" accept="audio/*" multiple style={{ display:'none' }} onChange={onFiles} />
+          </div>
+          <style>{`.vh-spin{width:18px;height:18px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      )}
     </div>
   );
 }

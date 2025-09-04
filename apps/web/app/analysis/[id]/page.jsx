@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../../components/i18n';
+import { renderMarkdown } from '../../../components/markdown';
 
 import WaveSurfer from 'wavesurfer.js';
 
@@ -10,7 +11,7 @@ const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
 
 export default function AnalysisDetail({ params }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { id } = params;
   const [token, setToken] = useState(null);
   const [meta, setMeta] = useState(null);
@@ -33,8 +34,24 @@ export default function AnalysisDetail({ params }) {
   const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
   const [progress, setProgress] = useState(0);
   const [audioError, setAudioError] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMetrics, setAiMetrics] = useState(null);
+  const [aiText, setAiText] = useState('');
+  const [aiErr, setAiErr] = useState('');
+  const [aiSubmitted, setAiSubmitted] = useState(false);
+  const [pcmPayload, setPcmPayload] = useState(null);
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
+
+  // Persisted pending flag to avoid repeated submissions across reloads
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const key = `vh_ai_pending_${id}_${lang}`;
+      const v = localStorage.getItem(key);
+      setAiSubmitted(v === '1');
+    } catch {}
+  }, [id, lang]);
 
   useEffect(() => {
     if (!token) return;
@@ -47,6 +64,16 @@ export default function AnalysisDetail({ params }) {
       setTitle(rec.title || rec.filename || '');
       // if cached advanced or spectrogram exist, load immediately
       if (rec.adv) setAdv(rec.adv);
+      if (rec.ai) {
+        try {
+          setAiMetrics(rec.ai.metrics || null);
+          const initialText = (rec.ai.texts && rec.ai.texts[lang]) || rec.ai.text || '';
+          setAiText(initialText);
+        } catch {}
+      }
+      if (rec.ai_generated_at) {
+        try { setAiMetrics(m=> ({ ...(m||{}), generated_at: rec.ai_generated_at })); } catch {}
+      }
       if (rec.spec_media_id) {
         try {
           const fr = await fetch(MEDIA_BASE + `/file/${rec.spec_media_id}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -55,6 +82,45 @@ export default function AnalysisDetail({ params }) {
       }
     })();
   }, [id, token]);
+
+  // Update AI text when language changes or meta updates
+  useEffect(() => {
+    if (!meta?.ai) return;
+    const next = (meta.ai.texts && meta.ai.texts[lang]) || meta.ai.text || '';
+    setAiText(next);
+  }, [lang, meta]);
+
+  // Poll for AI result when submitted, so UI updates automatically without page refresh
+  useEffect(() => {
+    if (!token || !id) return;
+    if (aiText) return; // already have text; no need to poll
+    const pendingOnServer = !!meta?.ai?.pending && !!meta.ai.pending[lang];
+    if (!(aiSubmitted || pendingOnServer)) return;
+    let cancelled = false;
+    let tries = 0;
+    const maxTries = 60; // ~3 minutes at 3s interval
+    const iv = setInterval(async () => {
+      if (cancelled) return;
+      tries++;
+      try {
+        const r = await fetch(ANALYSIS_BASE + `/records/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok) return;
+        const rec = await r.json();
+        setMeta(rec);
+        if (rec?.ai) {
+          const txt = (rec.ai.texts && rec.ai.texts[lang]) || rec.ai.text || '';
+          if (txt && txt.length > 0) {
+            setAiText(txt);
+            try { setAiMetrics(rec.ai.metrics || null); } catch {}
+            try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {}
+            clearInterval(iv);
+          }
+        }
+      } catch {}
+      if (tries >= maxTries) clearInterval(iv);
+    }, 3000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [aiSubmitted, aiText, token, id, lang, meta]);
 
   // Load audio blob URL only (render handled by WaveSurfer)
   useEffect(() => {
@@ -95,6 +161,7 @@ export default function AnalysisDetail({ params }) {
         for (let i = 0; i < ds.length; i++) ds[i] = ch[i * ratio] || 0;
         setLoading(s=>({ ...s, decode:false })); setProgress(p=>p+0.25);
         const payload = { sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds) };
+        setPcmPayload(payload);
         // run in parallel
         const featuresP = (async ()=>{
           const resp = await fetch(VIZ_BASE + '/features_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
@@ -135,6 +202,23 @@ export default function AnalysisDetail({ params }) {
       } catch {}
     })();
   }, [meta, token]);
+
+  // If AI exists but missing current language text, silently schedule background generation
+  useEffect(() => {
+    if (!token || !meta || !pcmPayload) return;
+    const hasTexts = !!meta?.ai?.texts;
+    const hasLang = hasTexts && (meta.ai.texts[lang] && meta.ai.texts[lang].length > 0);
+    if (meta?.ai && !hasLang) {
+      (async ()=>{
+        try {
+          // Mark as submitted to prevent repeated manual clicks
+          setAiSubmitted(true);
+          try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
+          await fetch(ANALYSIS_BASE + `/records/${id}/ai_start`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ ...pcmPayload, lang }) });
+        } catch {}
+      })();
+    }
+  }, [lang, meta, pcmPayload, token, id]);
   // Init WaveSurfer bound to the HTMLAudioElement (so bottom control bar controls everything)
   useEffect(() => {
     if (!audioUrl || !waveWrapRef.current || !audioRef.current) return;
@@ -473,6 +557,58 @@ export default function AnalysisDetail({ params }) {
           </div>
         </>
       )}
+
+      {/* AI Analysis */}
+      <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('AIAnalysis')}</div>
+      <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+        {!aiText && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+          <button disabled={aiBusy || aiSubmitted || !!aiText || !pcmPayload} onClick={async ()=>{
+            if (!pcmPayload || aiSubmitted) return; setAiBusy(true); setAiErr('');
+            try{
+              const r = await fetch(ANALYSIS_BASE + `/records/${id}/ai_start`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ ...pcmPayload, lang }) });
+              const j = await r.json(); if (!r.ok || j?.error) throw new Error(j?.error || 'start failed');
+              // inform submitted; we don't poll to respect background requirement
+              setAiErr('');
+              setAiSubmitted(true);
+              try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
+            }catch(e){ setAiErr((e?.message)||'AI analysis failed'); setAiSubmitted(false); try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {} }
+            finally{ setAiBusy(false); }
+          }} style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor: pcmPayload?'pointer':'not-allowed', opacity: (aiBusy || aiSubmitted) ? 0.7 : 1 }}>
+            {aiBusy ? t('Analyzing') : aiSubmitted ? t('SubmittedBG') : t('RunAI')}
+          </button>
+          {/* Remove duplicate submitted hint since button text shows it */}
+          {aiErr && <span style={{ color:'#b91c1c', fontSize:13 }}>{aiErr}</span>}
+        </div>
+        )}
+        {aiMetrics && (
+          <div style={{ marginTop:8, color:'#0f172a' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+              <div><b>{t('HRShort')}:</b> {aiMetrics.heart_rate_bpm? aiMetrics.heart_rate_bpm.toFixed(0): '—'} bpm</div>
+              <div><b>{t('S1S2Amp')}:</b> {aiMetrics.s1_s2_amplitude_ratio?.toFixed?.(2) || '—'}</div>
+              <div><b>{t('SystoleSec')}:</b> {aiMetrics.systole_interval_sec?.mean?.toFixed?.(3) || '—'} ({aiMetrics.systole_interval_sec?.count||0})</div>
+              <div><b>{t('DiastoleSec')}:</b> {aiMetrics.diastole_interval_sec?.mean?.toFixed?.(3) || '—'} ({aiMetrics.diastole_interval_sec?.count||0})</div>
+              <div><b>{t('HFRatio')}:</b> {aiMetrics.high_freq_energy_ratio?.toFixed?.(3) || '—'}</div>
+            </div>
+            {aiMetrics.interpretation && (
+              <div style={{ marginTop:8, fontSize:13, color:'#475569' }}>
+                <div>{aiMetrics.interpretation.heart_rate_comment || ''}</div>
+                <div>{aiMetrics.interpretation.amplitude_comment || ''}</div>
+                <div>{aiMetrics.interpretation.murmur_comment || ''}</div>
+              </div>
+            )}
+          </div>
+        )}
+        {aiText && (
+          <>
+            <div
+              style={{ marginTop:12, lineHeight:1.6, color:'#0f172a' }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(aiText) }}
+            />
+            <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>{t('AIGeneratedAt') + ' ' + (aiMetrics?.generated_at ? new Date(aiMetrics.generated_at).toLocaleString() : meta?.ai_generated_at ? new Date(meta.ai_generated_at).toLocaleString() : '')}</div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

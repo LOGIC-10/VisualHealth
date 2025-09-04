@@ -7,6 +7,7 @@ import pkg from 'pg';
 const PORT = process.env.PORT || 4004;
 const { Pool } = pkg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const VIZ_BASE = process.env.VIZ_BASE || 'http://viz-service:4006';
 
 async function init() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -20,6 +21,8 @@ async function init() {
       title TEXT,
       adv JSONB,
       spec_media_id UUID,
+      ai JSONB,
+      ai_generated_at TIMESTAMPTZ,
       features JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
@@ -27,6 +30,8 @@ async function init() {
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS title TEXT;
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS adv JSONB;
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS spec_media_id UUID;
+    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai JSONB;
+    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai_generated_at TIMESTAMPTZ;
   `);
 }
 
@@ -128,7 +133,7 @@ app.get('/records', async (req, res) => {
     const payload = verify(req);
     const userId = payload?.sub;
     const { rows } = await pool.query(
-      'SELECT id, media_id, filename, title, mimetype, size, created_at, (adv IS NOT NULL) AS has_adv, (spec_media_id IS NOT NULL) AS has_spec FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
+      'SELECT id, media_id, filename, title, mimetype, size, created_at, (adv IS NOT NULL) AS has_adv, (spec_media_id IS NOT NULL) AS has_spec, (ai IS NOT NULL) AS has_ai, ai_generated_at FROM analysis_records WHERE user_id=$1 ORDER BY created_at DESC',
       [userId]
     );
     res.json(rows);
@@ -141,8 +146,8 @@ app.get('/records/:id', async (req, res) => {
   try {
     const payload = verify(req);
     const userId = payload?.sub;
-    const { rows } = await pool.query(
-      'SELECT id, media_id, filename, title, mimetype, size, created_at, features, adv, spec_media_id FROM analysis_records WHERE id=$1 AND user_id=$2',
+  const { rows } = await pool.query(
+      'SELECT id, media_id, filename, title, mimetype, size, created_at, features, adv, spec_media_id, ai, ai_generated_at FROM analysis_records WHERE id=$1 AND user_id=$2',
       [req.params.id, userId]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
@@ -156,11 +161,11 @@ app.patch('/records/:id', async (req, res) => {
   try {
     const payload = verify(req);
     const userId = payload?.sub;
-    const { title, adv, specMediaId } = req.body || {};
-    if (title==null && adv==null && specMediaId==null) return res.status(400).json({ error: 'no fields' });
+    const { title, adv, specMediaId, ai, aiGeneratedAt } = req.body || {};
+    if (title==null && adv==null && specMediaId==null && ai==null && aiGeneratedAt==null) return res.status(400).json({ error: 'no fields' });
     const { rows } = await pool.query(
-      'UPDATE analysis_records SET title=COALESCE($1,title), adv=COALESCE($2,adv), spec_media_id=COALESCE($3,spec_media_id) WHERE id=$4 AND user_id=$5 RETURNING id, media_id, filename, title, mimetype, size, created_at, adv, spec_media_id',
-      [title ?? null, adv ?? null, specMediaId ?? null, req.params.id, userId]
+      'UPDATE analysis_records SET title=COALESCE($1,title), adv=COALESCE($2,adv), spec_media_id=COALESCE($3,spec_media_id), ai=COALESCE($4,ai), ai_generated_at=COALESCE($5,ai_generated_at) WHERE id=$6 AND user_id=$7 RETURNING id, media_id, filename, title, mimetype, size, created_at, adv, spec_media_id, ai, ai_generated_at',
+      [title ?? null, adv ?? null, specMediaId ?? null, ai ?? null, aiGeneratedAt ?? null, req.params.id, userId]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     res.json(rows[0]);
@@ -188,3 +193,92 @@ app.delete('/records/:id', async (req, res) => {
 });
 
 init().then(() => app.listen(PORT, () => console.log(`analysis-service on :${PORT}`)));
+
+// Start AI analysis in background and persist result
+app.post('/records/:id/ai_start', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    const { sampleRate, pcm, lang } = req.body || {};
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    if (!sampleRate || !Array.isArray(pcm) || pcm.length === 0) {
+      return res.status(400).json({ error: 'sampleRate and pcm required' });
+    }
+    // ensure record belongs to user
+    const rec = await pool.query('SELECT id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+    if (!rec.rowCount) return res.status(404).json({ error: 'not found' });
+
+    // Idempotency: prevent duplicate background runs for same lang
+    const L = lang || 'zh';
+    try {
+      const ex = await pool.query('SELECT ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+      let aiObj = {};
+      try { aiObj = ex.rows[0]?.ai || {}; } catch {}
+      aiObj.texts = aiObj.texts || {};
+      aiObj.pending = aiObj.pending || {};
+      if (aiObj.texts[L] && aiObj.texts[L].length > 0) {
+        return res.status(202).json({ started: false, already: true });
+      }
+      if (aiObj.pending[L]) {
+        return res.status(202).json({ started: false, pending: true });
+      }
+      // mark pending and persist immediately to block duplicates
+      aiObj.pending[L] = true;
+      await pool.query('UPDATE analysis_records SET ai=$1 WHERE id=$2 AND user_id=$3', [ aiObj, req.params.id, userId ]);
+    } catch(e) {
+      // non-fatal; continue
+    }
+
+    res.status(202).json({ started: true });
+
+    // background task
+    (async () => {
+      try {
+        const m = await fetch(VIZ_BASE + '/hard_algo_metrics', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sampleRate, pcm })
+        });
+        const metrics = await m.json();
+        if (metrics?.error) throw new Error(metrics.error);
+        const a = await fetch(VIZ_BASE + '/ai_pcg_analysis', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metrics, lang: lang || 'zh' })
+        });
+        const aj = await a.json();
+        if (aj?.error) throw new Error(aj.error);
+        const ts = new Date().toISOString();
+        // merge with existing AI JSON to support multiple languages
+        const ex = await pool.query('SELECT ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+        let aiObj = {};
+        try { aiObj = ex.rows[0]?.ai || {}; } catch {}
+        aiObj.model = aj.model || aiObj.model;
+        aiObj.metrics = aiObj.metrics || metrics; // keep first metrics
+        aiObj.texts = aiObj.texts || {};
+        aiObj.texts[L] = aj.text || '';
+        aiObj.generated_at = aiObj.generated_at || {};
+        aiObj.generated_at[L] = ts;
+        aiObj.pending = aiObj.pending || {};
+        aiObj.pending[L] = false;
+        await pool.query('UPDATE analysis_records SET ai=$1, ai_generated_at=$2 WHERE id=$3 AND user_id=$4', [ aiObj, ts, req.params.id, userId ]);
+        console.log(`[analysis] AI generated for record ${req.params.id}`);
+      } catch (e) {
+        console.warn('[analysis] AI background task failed:', e?.message || e);
+        // Clear pending flag on failure to allow retry
+        try {
+          const ex2 = await pool.query('SELECT ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+          let aiObj2 = {};
+          try { aiObj2 = ex2.rows[0]?.ai || {}; } catch {}
+          aiObj2.pending = aiObj2.pending || {};
+          aiObj2.pending[L] = false;
+          aiObj2.last_error = aiObj2.last_error || {};
+          aiObj2.last_error[L] = (e?.message) || String(e);
+          await pool.query('UPDATE analysis_records SET ai=$1 WHERE id=$2 AND user_id=$3', [ aiObj2, req.params.id, userId ]);
+        } catch {}
+      }
+    })();
+
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'ai start failed' });
+  }
+});

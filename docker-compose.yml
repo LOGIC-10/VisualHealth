@@ -69,6 +69,7 @@ services:
     environment:
       - PORT=4004
       - DATABASE_URL=postgres://analysis_user:analysis_pass@analysis-db:5432/analysis_db
+      - VIZ_BASE=http://viz-service:4006
     ports:
       - "4004:4004"
     depends_on:
@@ -112,6 +113,9 @@ services:
     build: ./services/viz
     environment:
       - PORT=4006
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_MODEL=${LLM_MODEL}
     ports:
       - "4006:4006"
 

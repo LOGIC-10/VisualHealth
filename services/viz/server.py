@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body
 from fastapi.responses import Response, JSONResponse
+from ai_heart import analyze_pcg_from_pcm, generate_ai_report
 
 PORT = int(os.getenv('PORT', '4006'))
 
@@ -468,3 +469,27 @@ async def pcg_advanced(
             's2': s2_idx[:200]
         }
     }
+
+
+@app.post('/hard_algo_metrics')
+async def hard_algo_metrics(
+    sampleRate: int = Body(...),
+    pcm: List[float] = Body(...)
+):
+    try:
+        m = analyze_pcg_from_pcm(sampleRate, pcm)
+        return m
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post('/ai_pcg_analysis')
+async def ai_pcg_analysis(
+    metrics: dict = Body(...),
+    lang: str = Body('zh')
+):
+    try:
+        r = generate_ai_report(metrics, lang or 'zh')
+        return r
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)

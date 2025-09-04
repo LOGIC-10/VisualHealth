@@ -66,10 +66,27 @@ export default function AnalysisListPage() {
         const running = new Set(); let idx = 0;
         const worker = async (item) => {
           try {
-            const r = await fetch(MEDIA_BASE + `/file/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
-            if (!r.ok) return;
-            const blob = await r.blob(); const arr = await blob.arrayBuffer();
-            const dec = await decodeDownsample(arr); if (!dec) return;
+        // Prefer signed URL to fetch the audio without Authorization header
+        let arr = null;
+        try {
+          const surl = await fetch(MEDIA_BASE + `/file_url/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+          if (surl.ok) {
+            const j = await surl.json();
+            if (j?.url) {
+              const fr = await fetch(j.url);
+              if (fr.ok) {
+                const blob = await fr.blob();
+                arr = await blob.arrayBuffer();
+              }
+            }
+          }
+        } catch {}
+        if (!arr) {
+          const r = await fetch(MEDIA_BASE + `/file/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+          if (!r.ok) return;
+          const blob = await r.blob(); arr = await blob.arrayBuffer();
+        }
+        const dec = await decodeDownsample(arr); if (!dec) return;
             const { payload } = dec;
             const [advResp, specResp] = await Promise.all([
               item.has_adv ? Promise.resolve({ ok: false }) : fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }),

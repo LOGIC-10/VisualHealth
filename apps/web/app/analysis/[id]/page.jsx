@@ -60,9 +60,25 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => {
     if (!token || !meta) return;
     (async () => {
-      const r = await fetch(MEDIA_BASE + `/file/${meta.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) { setAudioError('无法加载音频文件（可能的权限或密钥问题）'); return; }
-      const blob = await r.blob();
+      setAudioError(null);
+      let blob = null;
+      // Prefer short-lived signed URL to avoid any Authorization/CORS edge cases
+      try {
+        const surl = await fetch(MEDIA_BASE + `/file_url/${meta.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (surl.ok) {
+          const j = await surl.json();
+          if (j?.url) {
+            const fr = await fetch(j.url);
+            if (fr.ok) blob = await fr.blob();
+          }
+        }
+      } catch {}
+      if (!blob) {
+        // Fallback to direct authorized fetch
+        const r = await fetch(MEDIA_BASE + `/file/${meta.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (r.ok) blob = await r.blob();
+      }
+      if (!blob) { setAudioError('无法加载音频文件（可能的权限或密钥问题）'); return; }
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
       // compute extra features once (off-UI path)

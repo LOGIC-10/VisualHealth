@@ -18,6 +18,26 @@ if (MASTER_KEY.length !== 32) {
 const KEY = MASTER_KEY.length === 32 ? MASTER_KEY : LEGACY_KEY;
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const URL_SIGN_SECRET = process.env.MEDIA_URL_SIGN_SECRET || 'dev_url_sign_secret_change_me';
+
+function signUrlPayload(id, userId, expMs) {
+  const h = crypto.createHmac('sha256', URL_SIGN_SECRET);
+  h.update(`${id}.${userId}.${expMs}`);
+  return h.digest('hex');
+}
+
+function buildContentDispositionInline(filename) {
+  // Sanitize ASCII fallback: remove CR/LF and non-ASCII, escape quotes
+  const fallbackBase = (filename || 'file').replace(/[\r\n]+/g, ' ').replace(/["\\]/g, '_');
+  const ascii = fallbackBase.replace(/[^\x20-\x7E]+/g, '_').trim() || 'file';
+  // RFC 5987 encoding for UTF-8 filename*
+  const enc = encodeURIComponent(filename || 'file')
+    .replace(/'/g, '%27')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29')
+    .replace(/\*/g, '%2A');
+  return `inline; filename="${ascii}"; filename*=UTF-8''${enc}`;
+}
 
 async function init() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE TABLE IF NOT EXISTS media_files (
@@ -116,7 +136,20 @@ app.get('/file/:id', async (req, res) => {
     const { rows } = await pool.query('SELECT filename, mimetype, iv, tag, ciphertext, user_id, is_public FROM media_files WHERE id=$1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     const rec = rows[0];
-    if (!rec.is_public && rec.user_id !== userId) return res.status(403).json({ error: 'forbidden' });
+    // Allow access either by ownership (Authorization) or by a short-lived signed URL
+    let allow = false;
+    if (rec.is_public) allow = true;
+    if (rec.user_id === userId) allow = true;
+    if (!allow) {
+      const { exp, sig, uid } = req.query;
+      const expNum = exp ? parseInt(String(exp), 10) : 0;
+      const now = Date.now();
+      const expected = signUrlPayload(req.params.id, rec.user_id, expNum || 0);
+      if (sig && uid && String(uid) === String(rec.user_id) && expNum > now && sig === expected) {
+        allow = true;
+      }
+    }
+    if (!allow) return res.status(403).json({ error: 'forbidden' });
     // Try primary key first, then legacy key (self-heal by re-encrypting if legacy works)
     const tryDecrypt = (key) => {
       const dc = crypto.createDecipheriv('aes-256-gcm', key, rec.iv);
@@ -150,11 +183,34 @@ app.get('/file/:id', async (req, res) => {
       }
     }
     res.setHeader('Content-Type', rec.mimetype);
-    res.setHeader('Content-Disposition', `inline; filename="${rec.filename}"`);
+    res.setHeader('Content-Disposition', buildContentDispositionInline(rec.filename));
     res.send(plaintext);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'download failed' });
+  }
+});
+
+// Short-lived signed URL for downloading without Authorization header (to avoid CORS preflight)
+app.get('/file_url/:id', async (req, res) => {
+  try {
+    let userId = null;
+    try {
+      const payload = verify(req);
+      userId = payload?.sub;
+    } catch (_) {}
+    const { rows } = await pool.query('SELECT user_id, is_public FROM media_files WHERE id=$1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    const rec = rows[0];
+    if (!rec.is_public && rec.user_id !== userId) return res.status(403).json({ error: 'forbidden' });
+    const exp = Date.now() + 5 * 60 * 1000; // 5 minutes
+    const sig = signUrlPayload(req.params.id, rec.user_id, exp);
+    const base = `${req.protocol}://${req.get('host')}`;
+    const url = `${base}/file/${req.params.id}?uid=${encodeURIComponent(rec.user_id)}&exp=${exp}&sig=${sig}`;
+    res.json({ url, exp });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'sign failed' });
   }
 });
 

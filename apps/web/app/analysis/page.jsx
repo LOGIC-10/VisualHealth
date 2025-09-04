@@ -8,7 +8,9 @@ const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
 
 export default function AnalysisListPage() {
   const { t } = useI18n();
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(() => {
+    try { return localStorage.getItem('vh_token'); } catch { return null; }
+  });
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -23,19 +25,18 @@ export default function AnalysisListPage() {
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' or 'asc'
 
   useEffect(() => {
-    const t = localStorage.getItem('vh_token');
-    setToken(t);
-    if (!t) { setLoading(false); return; }
+    if (token === null) { setLoading(false); return; }
+    if (!token) { setLoading(false); return; }
     (async () => {
       try {
-        const r = await fetch(ANALYSIS_BASE + '/records', { headers: { Authorization: `Bearer ${t}` } });
+        const r = await fetch(ANALYSIS_BASE + '/records', { headers: { Authorization: `Bearer ${token}` } });
         const list = await r.json();
         setFiles(Array.isArray(list) ? list : []);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [token]);
 
   // Safety net: if healing runs too long (e.g., browser decode blocked), auto-hide after 30s
   useEffect(() => {
@@ -276,6 +277,15 @@ export default function AnalysisListPage() {
     // navigate if single
     if (fl.length === 1 && firstId) window.location.href = `/analysis/${firstId}`;
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  if (token === null) {
+    // initial boot; avoid flash
+    return (
+      <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
+        <div>{t('Loading')}</div>
+      </div>
+    );
   }
 
   if (!token) {

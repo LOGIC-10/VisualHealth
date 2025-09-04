@@ -7,7 +7,7 @@ const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
 
 export default function PostDetail({ params }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { id } = params;
   const [post, setPost] = useState(null);
   const [comments, setComments] = useState([]);
@@ -26,24 +26,30 @@ export default function PostDetail({ params }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [liking, setLiking] = useState(false);
+  const [replyTarget, setReplyTarget] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [replying, setReplying] = useState(false);
+  const [replyFiles, setReplyFiles] = useState([]);
 
-  async function load() {
+  async function load(withToken) {
+    const hdr = withToken ? { Authorization: `Bearer ${withToken}` } : undefined;
     const [p, c] = await Promise.all([
-      fetch(FEED_BASE + `/posts/${id}`).then(r => r.json()),
-      fetch(FEED_BASE + `/posts/${id}/comments`).then(r => r.json()),
+      fetch(FEED_BASE + `/posts/${id}`, { headers: hdr }).then(r => r.json()),
+      fetch(FEED_BASE + `/posts/${id}/comments`, { headers: hdr }).then(r => r.json()),
     ]);
     setPost(p);
     setComments(c);
   }
 
   useEffect(() => {
-    const t = localStorage.getItem('vh_token');
-    setToken(t);
-    if (t) {
-      fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${t}` } }).then(r=>r.json()).then(u=>{ if(!u?.error) setMe(u); }).catch(()=>{});
-    }
-    load();
+    const t = localStorage.getItem('vh_token'); setToken(t);
+    if (t) fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${t}` } }).then(r=>r.json()).then(u=>{ if(!u?.error) setMe(u); }).catch(()=>{});
   }, [id]);
+
+  useEffect(() => {
+    // Load post when token state resolved
+    if (token !== null) load(token || undefined);
+  }, [id, token]);
 
   function onPick(e) {
     const selected = Array.from(e.target.files || []);
@@ -84,7 +90,21 @@ export default function PostDetail({ params }) {
       body: JSON.stringify({ content, mediaIds })
     });
     setContent(''); setFiles([]);
-    load();
+    load(token);
+  }
+
+  async function sendReply(parentId){
+    if (!token) return alert('Please login');
+    const text = replyText.trim(); if (!text && replyFiles.length===0) return;
+    setReplying(true);
+    try {
+      const mediaIds = replyFiles.length ? await uploadImagesPublic(replyFiles) : [];
+      await fetch(FEED_BASE + `/posts/${id}/comments`, {
+        method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ content: text, parentId, mediaIds })
+      });
+      setReplyText(''); setReplyTarget(null); setReplyFiles([]);
+      load(token);
+    } finally { setReplying(false); }
   }
 
   function scrollBy(delta) {
@@ -121,6 +141,34 @@ export default function PostDetail({ params }) {
   }
 
   if (!post) return <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>{t('Loading')}</div>;
+
+  // Build nested comment tree
+  function buildTree(list){
+    const map = new Map(); const roots = [];
+    for (const c of list) map.set(c.id, { ...c, children: [] });
+    for (const c of map.values()){
+      if (c.parent_id && map.has(c.parent_id)) map.get(c.parent_id).children.push(c); else roots.push(c);
+    }
+    return { roots, map };
+  }
+  const { roots: tree, map: commentMap } = buildTree(comments || []);
+
+  function formatRelativeTime(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = Math.max(0, now - d);
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (days > 3) {
+      const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const da = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${da}`;
+    }
+    if (days >= 1) return lang === 'zh' ? `${days}天前` : `${days}d ago`;
+    if (hours >= 1) return lang === 'zh' ? `${hours}小时前` : `${hours}h ago`;
+    if (mins >= 1) return lang === 'zh' ? `${mins}分钟前` : `${mins}m ago`;
+    return lang === 'zh' ? '刚刚' : 'just now';
+  }
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
@@ -165,7 +213,7 @@ export default function PostDetail({ params }) {
         </div>
       )}
       <div style={{ marginTop: 8, color: '#64748b', display:'flex', alignItems:'center', gap:12 }}>
-        <span>{new Date(post.created_at).toLocaleString()}</span>
+        <span style={{ color:'#94a3b8', fontSize:12 }}>· {formatRelativeTime(post.created_at)}</span>
         <button onClick={toggleLike} disabled={!token} title={post.liked_by_me ? '取消点赞' : '点赞'} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:9999, border:'1px solid #e5e7eb', background: post.liked_by_me ? '#fee2e2' : '#fff', color:'#b91c1c', cursor: token ? 'pointer':'not-allowed' }}>
           <span>{post.liked_by_me ? '❤️' : '♡'}</span>
           <span style={{ color:'#475569' }}>{post.likes || 0}</span>
@@ -174,27 +222,10 @@ export default function PostDetail({ params }) {
       </div>
 
       <h3 style={{ marginTop: 24 }}>Comments</h3>
-      <div style={{ display: 'grid', gap: 12 }}>
-        {comments.map((c) => (
-          <div key={c.id} style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 12 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <div title={c.author_name || c.author_email} style={{ width:28, height:28, borderRadius:'9999px', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
-                {(c.author_name || c.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
-              </div>
-              <div style={{ fontWeight:600, color:'#0f172a' }}>{c.author_name || c.author_email || 'User'}</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>{new Date(c.created_at).toLocaleString()}</div>
-            </div>
-            <div style={{ marginTop: 8 }}>{c.content}</div>
-            {c.media_ids?.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
-                {c.media_ids.map((mid) => (
-                  <div key={mid} style={{ borderRadius: 8, overflow: 'hidden', background: '#f1f5f9', aspectRatio: '1 / 1' }}>
-                    <img src={`${MEDIA_BASE}/file/${mid}`} alt="comment image" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+      <div style={{ display:'grid', gap: 12 }}>
+        {tree.map((c) => (
+          <CommentItem key={c.id} c={c} depth={0} onReply={(id)=>{ setReplyTarget(id); setReplyText(''); setReplyFiles([]); }}
+            replyingId={replyTarget} replyText={replyText} setReplyText={setReplyText} onSendReply={sendReply} token={token} replyFiles={replyFiles} setReplyFiles={setReplyFiles} formatRelativeTime={formatRelativeTime} commentMap={commentMap} lang={lang} />
         ))}
       </div>
 
@@ -262,6 +293,113 @@ function Lightbox({ images, index=0, onClose }){
           {images.map((_,idx)=> <span key={idx} style={{ width:8, height:8, borderRadius:'50%', background: idx===i?'#fff':'#64748b', display:'inline-block' }}/>)}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CommentItem({ c, depth=0, onReply, replyingId, replyText, setReplyText, onSendReply, token, replyFiles, setReplyFiles, formatRelativeTime, commentMap, lang }){
+  const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+  const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
+  const [visible, setVisible] = useState(0);
+  const displayName = (cc) => (cc.author_name || cc.author_email || 'User');
+  const targetName = (cc) => {
+    const p = cc.parent_id ? commentMap?.get?.(cc.parent_id) : null;
+    return p ? displayName(p) : null;
+  };
+  const [myVote, setMyVote] = useState(c.my_vote || 0);
+  const [up, setUp] = useState(c.up || 0);
+  const [down, setDown] = useState(c.down || 0);
+  async function vote(v){
+    if (!token) return;
+    try {
+      if (myVote === v) {
+        await fetch(FEED_BASE + `/comments/${c.id}/vote`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } });
+        if (v === 1) setUp(x=>Math.max(0,x-1)); else setDown(x=>Math.max(0,x-1));
+        setMyVote(0);
+      } else {
+        const r = await fetch(FEED_BASE + `/comments/${c.id}/vote`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ value: v }) });
+        if (r.ok) {
+          if (v === 1) { setUp(x=>myVote===1?x:x+1); if (myVote===-1) setDown(x=>Math.max(0,x-1)); }
+          if (v === -1) { setDown(x=>myVote===-1?x:x+1); if (myVote===1) setUp(x=>Math.max(0,x-1)); }
+          setMyVote(v);
+        }
+      }
+    } catch {}
+  }
+
+  function pickReplyFiles(e){ const arr = Array.from(e.target.files||[]).slice(0, 9); setReplyFiles(arr); e.target.value=''; }
+  // constant indent for all replies (depth>=1)
+  // Only top-level has no indent; all replies share a single indent applied on the children container
+  const indentPx = 0;
+  return (
+    <div style={{ border: depth===0 ? '1px solid #e5e7eb' : 'none', borderRadius: depth===0 ? 12 : 0, padding:12, marginLeft: indentPx }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <div title={c.author_name || c.author_email} style={{ width:28, height:28, borderRadius:'9999px', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
+          {(c.author_name || c.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
+        </div>
+        {depth>0 && <span style={{ color:'#94a3b8' }}>↪︎</span>}
+        <div style={{ fontWeight:600, color:'#0f172a' }}>{displayName(c)}</div>
+        {depth>0 && targetName(c) && (
+          <>
+            <span style={{ color:'#64748b', fontSize:12 }}>{lang==='zh'?'回复':'replied to'}</span>
+            <div style={{ fontWeight:600, color:'#0f172a' }}>{targetName(c)}</div>
+          </>
+        )}
+      </div>
+      <div style={{ marginTop: 8 }}>{c.content}</div>
+      {c.media_ids?.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
+          {c.media_ids.map((mid) => (
+            <div key={mid} style={{ borderRadius: 8, overflow: 'hidden', background: '#f1f5f9', aspectRatio: '1 / 1' }}>
+              <img src={`${MEDIA_BASE}/file/${mid}`} alt="comment image" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          ))}
+        </div>
+      )}
+      {/* footer: time · thumbs up/down · reply */}
+      <div style={{ marginTop: 8, display:'flex', alignItems:'center', gap:12, color:'#64748b', fontSize:13 }}>
+        <span>{formatRelativeTime(c.created_at)}</span>
+        <button onClick={()=>vote(1)} title={myVote===1?(lang==='zh'?'取消赞':'Unvote'):(lang==='zh'?'点赞':'Thumb up')} style={{ display:'inline-flex', alignItems:'center', gap:6, background:'transparent', border:'none', color: myVote===1? '#2563eb':'#475569', cursor: token?'pointer':'not-allowed' }}>👍 {up}</button>
+        <button onClick={()=>vote(-1)} title={myVote===-1?(lang==='zh'?'取消踩':'Unvote'):(lang==='zh'?'点踩':'Thumb down')} style={{ display:'inline-flex', alignItems:'center', gap:6, background:'transparent', border:'none', color: myVote===-1? '#dc2626':'#475569', cursor: token?'pointer':'not-allowed' }}>👎 {down}</button>
+        <button onClick={()=>onReply(c.id)} disabled={!token} style={{ background:'transparent', border:'none', color:'#2563eb', cursor: token?'pointer':'not-allowed' }}>{lang==='zh'?'回复':'Reply'}</button>
+      </div>
+      {replyingId === c.id && (
+        <div style={{ marginTop: 8 }}>
+          <input value={replyText} onChange={e=>setReplyText(e.target.value)} placeholder="写下你的回复…（可选）" style={{ width:'100%', padding:'6px 2px', border:'none', borderBottom:'1px solid #e5e7eb', outline:'none' }} />
+          {/* reply images */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:6 }}>
+            <input id={`reply-pick-${c.id}`} type="file" multiple accept="image/*" style={{ display:'none' }} onChange={pickReplyFiles} />
+            <label htmlFor={`reply-pick-${c.id}`} style={{ cursor:'pointer', color:'#2563eb', fontSize:13 }}>添加图片</label>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {replyFiles.map((f,i)=> (
+                <div key={i} style={{ width:48, height:48, borderRadius:6, overflow:'hidden', position:'relative', background:'#f1f5f9' }}>
+                  <img src={URL.createObjectURL(f)} alt="preview" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
+              <button onClick={()=>onSendReply(c.id)} disabled={false} style={{ padding:'6px 10px', borderRadius:8, background:'#111', color:'#fff' }}>发送</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {Array.isArray(c.children) && c.children.length > 0 && (
+        <div style={{ marginTop: 8, display:'grid', gap:8, marginLeft: depth===0 ? 28 : 0 }}>
+          {visible === 0 && (
+            <button onClick={()=>setVisible(c.children.length)} style={{ background:'transparent', border:'none', color:'#2563eb', textAlign:'left', padding:0, cursor:'pointer' }}>
+              {lang==='zh'? `查看 ${c.children.length} 条回复` : `View ${c.children.length} replies`}
+            </button>
+          )}
+          {visible > 0 && (
+            <>
+              {c.children.map(ch => (
+                <CommentItem key={ch.id} c={ch} depth={depth+1} onReply={onReply} replyingId={replyingId} replyText={replyText} setReplyText={setReplyText} onSendReply={onSendReply} token={token} replyFiles={replyFiles} setReplyFiles={setReplyFiles} formatRelativeTime={formatRelativeTime} commentMap={commentMap} lang={lang} />
+              ))}
+              <button onClick={()=>setVisible(0)} style={{ background:'transparent', border:'none', color:'#2563eb', textAlign:'left', padding:0, cursor:'pointer' }}>{lang==='zh'?'收起':'Hide replies'}</button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

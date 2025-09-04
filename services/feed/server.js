@@ -39,6 +39,7 @@ async function init() {
     content TEXT NOT NULL,
     author_name TEXT,
     author_email TEXT,
+    parent_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
   CREATE TABLE IF NOT EXISTS post_media (
@@ -53,6 +54,13 @@ async function init() {
     idx INT NOT NULL,
     PRIMARY KEY (comment_id, idx)
   );
+  CREATE TABLE IF NOT EXISTS comment_votes (
+    user_id UUID NOT NULL,
+    comment_id UUID NOT NULL,
+    value SMALLINT NOT NULL CHECK (value IN (-1,1)),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, comment_id)
+  );
   `);
   // Safe migrations for added columns
   await pool.query(`
@@ -60,6 +68,15 @@ async function init() {
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_email TEXT;
     ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_name TEXT;
     ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_email TEXT;
+    ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id UUID;
+    CREATE INDEX IF NOT EXISTS idx_comments_post_parent ON comments(post_id, parent_id);
+    CREATE TABLE IF NOT EXISTS comment_votes (
+      user_id UUID NOT NULL,
+      comment_id UUID NOT NULL,
+      value SMALLINT NOT NULL CHECK (value IN (-1,1)),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, comment_id)
+    );
   `);
 }
 
@@ -179,11 +196,15 @@ app.post('/posts/:id/bookmark', async (req, res) => {
 app.post('/posts/:id/comments', async (req, res) => {
   try {
     const userId = requireUser(req);
-    const { content, mediaIds } = req.body || {};
+    const { content, mediaIds, parentId } = req.body || {};
     if (!content) return res.status(400).json({ error: 'content required' });
     if (mediaIds && mediaIds.length > 12) return res.status(400).json({ error: 'max 12 images' });
+    if (parentId) {
+      const chk = await pool.query('SELECT 1 FROM comments WHERE id=$1 AND post_id=$2 LIMIT 1', [parentId, req.params.id]);
+      if (!chk.rowCount) return res.status(400).json({ error: 'invalid parentId' });
+    }
     const author = await getAuthorInfo(req);
-    const { rows } = await pool.query('INSERT INTO comments (user_id, post_id, content, author_name, author_email) VALUES ($1,$2,$3,$4,$5) RETURNING *', [userId, req.params.id, content, author.name, author.email]);
+    const { rows } = await pool.query('INSERT INTO comments (user_id, post_id, content, author_name, author_email, parent_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [userId, req.params.id, content, author.name, author.email, parentId || null]);
     const comment = rows[0];
     if (Array.isArray(mediaIds)) {
       for (let i = 0; i < Math.min(mediaIds.length, 12); i++) {
@@ -197,10 +218,46 @@ app.post('/posts/:id/comments', async (req, res) => {
 });
 
 app.get('/posts/:id/comments', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  let currentUser = null;
+  try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
   const { rows } = await pool.query(`
-    SELECT c.*, COALESCE((SELECT json_agg(cm.media_id ORDER BY cm.idx) FROM comment_media cm WHERE cm.comment_id=c.id), '[]'::json) AS media_ids
+    SELECT c.*, 
+      COALESCE((SELECT json_agg(cm.media_id ORDER BY cm.idx) FROM comment_media cm WHERE cm.comment_id=c.id), '[]'::json) AS media_ids,
+      (SELECT count(*)::int FROM comment_votes v WHERE v.comment_id=c.id AND v.value=1) AS up,
+      (SELECT count(*)::int FROM comment_votes v WHERE v.comment_id=c.id AND v.value=-1) AS down,
+      ${currentUser ? `(SELECT COALESCE(MAX(value),0) FROM comment_votes v2 WHERE v2.comment_id=c.id AND v2.user_id='${currentUser}') AS my_vote` : `0 AS my_vote`}
     FROM comments c WHERE c.post_id=$1 ORDER BY created_at ASC`, [req.params.id]);
   res.json(rows);
+});
+
+// Vote on a comment: value = 1 (up) or -1 (down). Same value toggles off.
+app.post('/comments/:id/vote', async (req, res) => {
+  try {
+    const userId = requireUser(req);
+    let { value } = req.body || {};
+    value = parseInt(value, 10);
+    if (value !== 1 && value !== -1) return res.status(400).json({ error: 'invalid value' });
+    const existing = await pool.query('SELECT value FROM comment_votes WHERE user_id=$1 AND comment_id=$2', [userId, req.params.id]);
+    if (existing.rowCount && existing.rows[0].value === value) {
+      await pool.query('DELETE FROM comment_votes WHERE user_id=$1 AND comment_id=$2', [userId, req.params.id]);
+      return res.json({ ok: true, my_vote: 0 });
+    }
+    await pool.query('INSERT INTO comment_votes (user_id, comment_id, value) VALUES ($1,$2,$3) ON CONFLICT (user_id, comment_id) DO UPDATE SET value=EXCLUDED.value', [userId, req.params.id, value]);
+    res.json({ ok: true, my_vote: value });
+  } catch (e) {
+    res.status(401).json({ error: 'unauthorized' });
+  }
+});
+
+app.delete('/comments/:id/vote', async (req, res) => {
+  try {
+    const userId = requireUser(req);
+    await pool.query('DELETE FROM comment_votes WHERE user_id=$1 AND comment_id=$2', [userId, req.params.id]);
+    res.status(204).end();
+  } catch (e) {
+    res.status(401).json({ error: 'unauthorized' });
+  }
 });
 
 // Edit post (owner only)

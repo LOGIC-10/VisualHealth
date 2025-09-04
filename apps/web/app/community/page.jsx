@@ -10,15 +10,19 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState([]);
   const [token, setToken] = useState(null);
 
-  async function load() {
-    const resp = await fetch(FEED_BASE + '/posts');
+  async function load(withToken) {
+    const hdr = withToken ? { Authorization: `Bearer ${withToken}` } : undefined;
+    const resp = await fetch(FEED_BASE + '/posts', { headers: hdr });
     setPosts(await resp.json());
   }
 
   useEffect(() => {
-    setToken(localStorage.getItem('vh_token'));
-    load();
+    const t = localStorage.getItem('vh_token'); setToken(t);
   }, []);
+
+  useEffect(() => {
+    if (token !== null) load(token || undefined);
+  }, [token]);
 
   function parseMediaIds(m) {
     if (Array.isArray(m)) return m;

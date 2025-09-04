@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
 const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
 
 export default function AnalyzePage() {
+  const router = useRouter();
   const { t } = useI18n();
   const containerRef = useRef(null);
   const [ws, setWs] = useState(null);
@@ -13,6 +15,7 @@ export default function AnalyzePage() {
   const [token, setToken] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState(null);
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
@@ -35,6 +38,7 @@ export default function AnalyzePage() {
     const file = e.target.files?.[0];
     if (!file || !ws) return;
     setFileObj(file);
+    if (token) setNavigating(true);
     const arrayBuffer = await file.arrayBuffer();
     ws.loadBlob(file);
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -69,7 +73,11 @@ export default function AnalyzePage() {
           body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: json })
         });
         const saved = await rec.json();
-        if (saved?.id) setSavedId(saved.id);
+        if (saved?.id) {
+          setSavedId(saved.id);
+          router.replace(`/analysis/${saved.id}`);
+          return; // stop further UI updates on this page
+        }
 
         // Precompute advanced & spectrogram and patch record (cache)
         try {
@@ -94,12 +102,12 @@ export default function AnalyzePage() {
             });
           }
         } catch {}
-      } catch (err) {
-        console.warn('persist failed', err);
-      } finally {
-        setSaving(false);
+        } catch (err) {
+          console.warn('persist failed', err);
+        } finally {
+          setSaving(false);
+        }
       }
-    }
   }
 
   // Upload removed per design (no encrypted saving)
@@ -108,9 +116,16 @@ export default function AnalyzePage() {
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('NewAnalysis')}</h1>
       <input type="file" accept="audio/*" onChange={handleFile} />
-      <div ref={containerRef} style={{ marginTop: 16 }} />
+      {!navigating && <div ref={containerRef} style={{ marginTop: 16 }} />}
+      {navigating && (
+        <div style={{ marginTop:16, display:'grid', placeItems:'center', color:'#64748b' }}>
+          <div className="vh-spin" />
+          <div style={{ marginTop:8 }}>{'Preparing analysis…'}</div>
+          <style>{`.vh-spin{width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      )}
       {/* Removed Save Encrypted Copy */}
-      {features && (
+      {!navigating && features && (
         <div style={{ marginTop: 16, background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <h3>{t('Features')}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>

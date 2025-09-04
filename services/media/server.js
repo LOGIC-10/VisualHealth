@@ -59,13 +59,16 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'unauthorized' });
     if (!req.file) return res.status(400).json({ error: 'file required' });
     const isPublic = (req.body?.public === 'true' || req.body?.public === true);
+    // Normalize original filename to UTF-8 to avoid garbled non-ASCII names
+    let original = req.file.originalname || 'file';
+    try { original = Buffer.from(original, 'latin1').toString('utf8'); } catch {}
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', KEY, iv);
     const ciphertext = Buffer.concat([cipher.update(req.file.buffer), cipher.final()]);
     const tag = cipher.getAuthTag();
     const { rows } = await pool.query(
       'INSERT INTO media_files (user_id, filename, mimetype, size, iv, tag, ciphertext, is_public) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, filename, mimetype, size, is_public, created_at',
-      [userId, req.file.originalname, req.file.mimetype, req.file.size, iv, tag, ciphertext, isPublic]
+      [userId, original, req.file.mimetype, req.file.size, iv, tag, ciphertext, isPublic]
     );
     res.json(rows[0]);
   } catch (e) {

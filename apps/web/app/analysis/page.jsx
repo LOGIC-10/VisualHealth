@@ -37,6 +37,15 @@ export default function AnalysisListPage() {
     })();
   }, []);
 
+  // Safety net: if healing runs too long (e.g., browser decode blocked), auto-hide after 30s
+  useEffect(() => {
+    if (!healing.running) return;
+    const timer = setTimeout(() => {
+      setHealing(h => ({ ...h, running: false }));
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [healing.running]);
+
   // Background: precompute missing advanced/spectrogram for older records
   useEffect(() => {
     if (!token) return;
@@ -46,23 +55,42 @@ export default function AnalysisListPage() {
         // Use a fresh snapshot to avoid effect loops tied to `files`
         const r0 = await fetch(ANALYSIS_BASE + '/records', { headers: { Authorization: `Bearer ${token}` } });
         const list0 = await r0.json();
-        const pending = (Array.isArray(list0) ? list0 : []).filter(f => !f.has_adv || !f.has_spec).slice(0, 10);
+        const pending = (Array.isArray(list0) ? list0 : []).filter(f => !f.has_adv || !f.has_spec).slice(0, 5);
         if (pending.length === 0) return;
         setHealing({ running: true, total: pending.length, done: 0 });
 
         const decodeDownsample = async (arrayBuffer) => {
-          try {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const buf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-            const ch = buf.getChannelData(0);
-            const targetSR = 8000; const ratio = Math.max(1, Math.floor(buf.sampleRate / targetSR));
-            const ds = new Float32Array(Math.ceil(ch.length / ratio));
-            for (let i = 0; i < ds.length; i++) ds[i] = ch[i * ratio] || 0;
-            return { payload: { sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds) } };
-          } catch { return null; }
+          const timeoutMs = 8000;
+          const CtxA = window.OfflineAudioContext || window.webkitOfflineAudioContext || window.AudioContext || window.webkitAudioContext;
+          if (!CtxA) return null;
+          const task = (async () => {
+            let audioCtx;
+            try {
+              // Prefer OfflineAudioContext to avoid autoplay/user-gesture policies
+              if (window.OfflineAudioContext || window.webkitOfflineAudioContext) {
+                const OC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+                audioCtx = new OC(1, 2, 44100);
+              } else {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AC();
+              }
+              const buf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+              const ch = buf.getChannelData(0);
+              const targetSR = 8000; const ratio = Math.max(1, Math.floor(buf.sampleRate / targetSR));
+              const ds = new Float32Array(Math.ceil(ch.length / ratio));
+              for (let i = 0; i < ds.length; i++) ds[i] = ch[i * ratio] || 0;
+              try { await audioCtx.close?.(); } catch {}
+              return { payload: { sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds) } };
+            } catch {
+              try { await audioCtx?.close?.(); } catch {}
+              return null;
+            }
+          })();
+          const timed = new Promise(resolve => setTimeout(() => resolve(null), timeoutMs));
+          return await Promise.race([task, timed]);
         };
 
-        const maxConcurrent = 2;
+        const maxConcurrent = 1; // keep light to reduce decode pressure
         const running = new Set(); let idx = 0;
         const worker = async (item) => {
           try {

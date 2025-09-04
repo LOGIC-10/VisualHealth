@@ -45,7 +45,7 @@ services:
     environment:
       - PORT=4003
       - DATABASE_URL=postgres://media_user:media_pass@media-db:5432/media_db
-      - MEDIA_MASTER_KEY_BASE64=ZGV2X21hc3Rlcl9rZXlfMzJieXRlcw==
+      - MEDIA_MASTER_KEY_BASE64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       - AUTH_BASE=http://auth-service:4001
     ports:
       - "4003:4003"

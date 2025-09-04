@@ -5,14 +5,17 @@ import multer from 'multer';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import pkg from 'pg';
+import { fileTypeFromBuffer } from 'file-type';
+import mime from 'mime-types';
 
 const { Pool } = pkg;
 const PORT = process.env.PORT || 4003;
 const MASTER_KEY = Buffer.from(process.env.MEDIA_MASTER_KEY_BASE64 || '', 'base64');
+const LEGACY_KEY = crypto.createHash('sha256').update('dev_media_master_key').digest();
 if (MASTER_KEY.length !== 32) {
-  console.warn('[media] MEDIA_MASTER_KEY_BASE64 not set to 32 bytes base64. Using INSECURE dev key.');
+  console.warn('[media] MEDIA_MASTER_KEY_BASE64 not 32 bytes; falling back to legacy dev key.');
 }
-const KEY = MASTER_KEY.length === 32 ? MASTER_KEY : crypto.createHash('sha256').update('dev_media_master_key').digest();
+const KEY = MASTER_KEY.length === 32 ? MASTER_KEY : LEGACY_KEY;
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -43,7 +46,9 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 const app = express();
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
@@ -62,13 +67,26 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     // Normalize original filename to UTF-8 to avoid garbled non-ASCII names
     let original = req.file.originalname || 'file';
     try { original = Buffer.from(original, 'latin1').toString('utf8'); } catch {}
+    // Detect real mime when client reports octet-stream or unknown
+    let detectedMime = req.file.mimetype || '';
+    if (!detectedMime || detectedMime === 'application/octet-stream') {
+      try {
+        const ft = await fileTypeFromBuffer(req.file.buffer);
+        if (ft?.mime) detectedMime = ft.mime;
+      } catch {}
+      if (!detectedMime) {
+        const byExt = mime.lookup(original) || '';
+        if (byExt) detectedMime = byExt;
+      }
+      if (!detectedMime) detectedMime = 'application/octet-stream';
+    }
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', KEY, iv);
     const ciphertext = Buffer.concat([cipher.update(req.file.buffer), cipher.final()]);
     const tag = cipher.getAuthTag();
     const { rows } = await pool.query(
       'INSERT INTO media_files (user_id, filename, mimetype, size, iv, tag, ciphertext, is_public) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, filename, mimetype, size, is_public, created_at',
-      [userId, original, req.file.mimetype, req.file.size, iv, tag, ciphertext, isPublic]
+      [userId, original, detectedMime, req.file.size, iv, tag, ciphertext, isPublic]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -99,9 +117,38 @@ app.get('/file/:id', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'not found' });
     const rec = rows[0];
     if (!rec.is_public && rec.user_id !== userId) return res.status(403).json({ error: 'forbidden' });
-    const decipher = crypto.createDecipheriv('aes-256-gcm', KEY, rec.iv);
-    decipher.setAuthTag(rec.tag);
-    const plaintext = Buffer.concat([decipher.update(rec.ciphertext), decipher.final()]);
+    // Try primary key first, then legacy key (self-heal by re-encrypting if legacy works)
+    const tryDecrypt = (key) => {
+      const dc = crypto.createDecipheriv('aes-256-gcm', key, rec.iv);
+      dc.setAuthTag(rec.tag);
+      return Buffer.concat([dc.update(rec.ciphertext), dc.final()]);
+    };
+    let plaintext = null;
+    let usedLegacy = false;
+    try {
+      plaintext = tryDecrypt(KEY);
+    } catch (e1) {
+      // Try legacy
+      try {
+        plaintext = tryDecrypt(LEGACY_KEY);
+        usedLegacy = (MASTER_KEY.length === 32) && (Buffer.compare(KEY, LEGACY_KEY) !== 0);
+      } catch (e2) {
+        throw e1; // prefer primary error
+      }
+    }
+    // If decrypted with legacy and a valid primary key is configured, re-encrypt and update row
+    if (usedLegacy) {
+      try {
+        const iv2 = crypto.randomBytes(12);
+        const c = crypto.createCipheriv('aes-256-gcm', KEY, iv2);
+        const ciphertext2 = Buffer.concat([c.update(plaintext), c.final()]);
+        const tag2 = c.getAuthTag();
+        await pool.query('UPDATE media_files SET iv=$1, tag=$2, ciphertext=$3 WHERE id=$4', [iv2, tag2, ciphertext2, req.params.id]);
+        console.log(`[media] Self-healed and re-encrypted media ${req.params.id} with primary key.`);
+      } catch (e) {
+        console.warn('[media] Self-heal re-encrypt failed:', e?.message || e);
+      }
+    }
     res.setHeader('Content-Type', rec.mimetype);
     res.setHeader('Content-Disposition', `inline; filename="${rec.filename}"`);
     res.send(plaintext);

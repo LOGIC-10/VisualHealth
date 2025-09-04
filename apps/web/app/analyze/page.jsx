@@ -73,13 +73,9 @@ export default function AnalyzePage() {
           body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: json })
         });
         const saved = await rec.json();
-        if (saved?.id) {
-          setSavedId(saved.id);
-          router.replace(`/analysis/${saved.id}`);
-          return; // stop further UI updates on this page
-        }
 
         // Precompute advanced & spectrogram and patch record (cache)
+        // Do this BEFORE navigating, so users see results on first load even if they don't open detail immediately.
         try {
           const payload = { sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) };
           const [advResp, specResp] = await Promise.all([
@@ -102,6 +98,11 @@ export default function AnalyzePage() {
             });
           }
         } catch {}
+        if (saved?.id) {
+          setSavedId(saved.id);
+          router.replace(`/analysis/${saved.id}`);
+          return; // stop further UI updates on this page
+        }
         } catch (err) {
           console.warn('persist failed', err);
         } finally {

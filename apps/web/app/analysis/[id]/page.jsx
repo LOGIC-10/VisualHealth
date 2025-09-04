@@ -32,6 +32,7 @@ export default function AnalysisDetail({ params }) {
   const [adv, setAdv] = useState(null);
   const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
   const [progress, setProgress] = useState(0);
+  const [audioError, setAudioError] = useState(null);
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
 
@@ -60,7 +61,7 @@ export default function AnalysisDetail({ params }) {
     if (!token || !meta) return;
     (async () => {
       const r = await fetch(MEDIA_BASE + `/file/${meta.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) return;
+      if (!r.ok) { setAudioError('无法加载音频文件（可能的权限或密钥问题）'); return; }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
@@ -364,15 +365,21 @@ export default function AnalysisDetail({ params }) {
           <div style={{ width: `${Math.round(Math.min(1, progress)*100)}%`, height:'100%', background:'#2563eb', transition:'width 200ms linear' }} />
         </div>
       )}
-      <div
-        ref={waveWrapRef}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
-      />
+      {audioError ? (
+        <div style={{ padding:12, color:'#b91c1c', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12 }}>
+          {audioError}
+        </div>
+      ) : (
+        <div
+          ref={waveWrapRef}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
+        />
+      )}
 
       {/* Time ruler under waveform */}
       <canvas ref={rulerRef} style={{ width:'100%' }} />

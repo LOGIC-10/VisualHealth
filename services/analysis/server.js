@@ -170,4 +170,21 @@ app.patch('/records/:id', async (req, res) => {
   }
 });
 
+// Delete an analysis record
+app.delete('/records/:id', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    const { rowCount } = await pool.query(
+      'DELETE FROM analysis_records WHERE id=$1 AND user_id=$2',
+      [req.params.id, userId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not found' });
+    res.status(204).end();
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'delete failed' });
+  }
+});
+
 init().then(() => app.listen(PORT, () => console.log(`analysis-service on :${PORT}`)));

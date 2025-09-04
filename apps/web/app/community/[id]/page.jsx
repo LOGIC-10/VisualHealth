@@ -4,6 +4,7 @@ import { useI18n } from '../../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
 
 export default function PostDetail({ params }) {
   const { t } = useI18n();
@@ -20,6 +21,11 @@ export default function PostDetail({ params }) {
   const replaceInputRef = useRef(null);
   const [replaceIndex, setReplaceIndex] = useState(null);
   const [lightbox, setLightbox] = useState({ open: false, index: 0 });
+  const [me, setMe] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [liking, setLiking] = useState(false);
 
   async function load() {
     const [p, c] = await Promise.all([
@@ -31,7 +37,11 @@ export default function PostDetail({ params }) {
   }
 
   useEffect(() => {
-    setToken(localStorage.getItem('vh_token'));
+    const t = localStorage.getItem('vh_token');
+    setToken(t);
+    if (t) {
+      fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${t}` } }).then(r=>r.json()).then(u=>{ if(!u?.error) setMe(u); }).catch(()=>{});
+    }
     load();
   }, [id]);
 
@@ -82,12 +92,61 @@ export default function PostDetail({ params }) {
     el.scrollBy({ left: delta, behavior: 'smooth' });
   }
 
+  async function toggleLike(){
+    if (!token || !post) return;
+    if (liking) return;
+    setLiking(true);
+    try {
+      if (post.liked_by_me) {
+        await fetch(FEED_BASE + `/posts/${id}/like`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } });
+        setPost(p => ({ ...p, liked_by_me:false, likes: Math.max(0, (p.likes||0)-1) }));
+      } else {
+        await fetch(FEED_BASE + `/posts/${id}/like`, { method:'POST', headers:{ Authorization:`Bearer ${token}` } });
+        setPost(p => ({ ...p, liked_by_me:true, likes: (p.likes||0)+1 }));
+      }
+    } finally { setLiking(false); }
+  }
+
+  async function saveEdit(){
+    if (!token || !post) return;
+    const r = await fetch(FEED_BASE + `/posts/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ content: editText }) });
+    if (r.ok) { const j = await r.json(); setPost(p=>({ ...p, content: j.content })); setEditing(false); }
+  }
+  async function deletePost(){
+    if (!token || !post) return;
+    const ok = window.confirm('确认删除该帖子？此操作不可撤销。');
+    if (!ok) return;
+    const r = await fetch(FEED_BASE + `/posts/${id}`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } });
+    if (r.status === 204) window.location.href = '/community';
+  }
+
   if (!post) return <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>{t('Loading')}</div>;
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>← {t('Back')}</a>
-      <h1 style={{ fontSize: 24, margin: '12px 0' }}>{post.content}</h1>
+      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>{t('Back')}</a>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        {!editing && <h1 style={{ fontSize: 24, margin: '12px 0' }}>{post.content}</h1>}
+        {editing && (
+          <div style={{ flex:1, display:'flex', gap:8, alignItems:'center' }}>
+            <input value={editText} onChange={e=>setEditText(e.target.value)} style={{ flex:1, padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
+            <button onClick={()=>setEditing(false)} style={{ padding:'8px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff' }}>取消</button>
+            <button onClick={saveEdit} style={{ padding:'8px 10px', borderRadius:8, background:'#111', color:'#fff' }}>保存</button>
+          </div>
+        )}
+        {/* Owner actions menu */}
+        {me?.id && post.user_id === me.id && (
+          <div style={{ position:'relative' }}>
+            <button onClick={()=>{ setMenuOpen(v=>!v); setEditText(post.content||''); }} title="更多" style={{ background:'transparent', border:'none', cursor:'pointer', padding:6, borderRadius:8 }}>⋯</button>
+            {menuOpen && (
+              <div onMouseLeave={()=>setMenuOpen(false)} style={{ position:'absolute', right:0, top:'100%', marginTop:6, background:'#fff', border:'1px solid #e5e7eb', borderRadius:8, boxShadow:'0 8px 24px rgba(0,0,0,0.08)', minWidth:140, overflow:'hidden', zIndex:5 }}>
+                <button onClick={()=>{ setEditing(true); setMenuOpen(false); }} style={{ display:'block', width:'100%', textAlign:'left', padding:'8px 10px', background:'transparent', border:'none', cursor:'pointer' }}>编辑</button>
+                <button onClick={()=>{ setMenuOpen(false); deletePost(); }} style={{ display:'block', width:'100%', textAlign:'left', padding:'8px 10px', background:'transparent', border:'none', color:'#b91c1c', cursor:'pointer' }}>删除</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       {post.media_ids?.length > 0 && (
         <div style={{ position: 'relative' }}>
           <div ref={scrollerRef} style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: '100%', overflowX: 'auto', scrollSnapType: 'x mandatory', gap: 8, borderRadius: 12 }}>
@@ -105,13 +164,26 @@ export default function PostDetail({ params }) {
           </div>
         </div>
       )}
-      <div style={{ marginTop: 8, color: '#64748b' }}>{new Date(post.created_at).toLocaleString()} • ❤️ {post.likes} • 💬 {post.comments}</div>
+      <div style={{ marginTop: 8, color: '#64748b', display:'flex', alignItems:'center', gap:12 }}>
+        <span>{new Date(post.created_at).toLocaleString()}</span>
+        <button onClick={toggleLike} disabled={!token} title={post.liked_by_me ? '取消点赞' : '点赞'} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:9999, border:'1px solid #e5e7eb', background: post.liked_by_me ? '#fee2e2' : '#fff', color:'#b91c1c', cursor: token ? 'pointer':'not-allowed' }}>
+          <span>{post.liked_by_me ? '❤️' : '♡'}</span>
+          <span style={{ color:'#475569' }}>{post.likes || 0}</span>
+        </button>
+        <span>💬 {post.comments}</span>
+      </div>
 
       <h3 style={{ marginTop: 24 }}>Comments</h3>
       <div style={{ display: 'grid', gap: 12 }}>
         {comments.map((c) => (
           <div key={c.id} style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontSize: 12, color: '#64748b' }}>{new Date(c.created_at).toLocaleString()}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div title={c.author_name || c.author_email} style={{ width:28, height:28, borderRadius:'9999px', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
+                {(c.author_name || c.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
+              </div>
+              <div style={{ fontWeight:600, color:'#0f172a' }}>{c.author_name || c.author_email || 'User'}</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>{new Date(c.created_at).toLocaleString()}</div>
+            </div>
             <div style={{ marginTop: 8 }}>{c.content}</div>
             {c.media_ids?.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>

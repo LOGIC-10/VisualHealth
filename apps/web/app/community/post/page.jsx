@@ -81,7 +81,7 @@ export default function CreatePostPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>← {t('Back')}</a>
+      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>{t('Back')}</a>
       <h1 style={{ fontSize: 24, margin: '12px 0' }}>{t('CreatePostTitle')}</h1>
       <div style={{ display: 'grid', gap: 12 }}>
         <textarea placeholder={t('ShareStory')} value={content} onChange={e => setContent(e.target.value)} style={{ padding: 12, borderRadius: 8, border: '1px solid #e5e7eb', minHeight: 120 }} />

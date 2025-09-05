@@ -70,10 +70,12 @@ services:
       - PORT=4004
       - DATABASE_URL=postgres://analysis_user:analysis_pass@analysis-db:5432/analysis_db
       - VIZ_BASE=http://viz-service:4006
+      - LLM_SVC=http://llm-service:4007
     ports:
       - "4004:4004"
     depends_on:
       - analysis-db
+      - llm-service
 
   analysis-db:
     image: postgres:16-alpine
@@ -118,6 +120,16 @@ services:
       - LLM_MODEL=${LLM_MODEL}
     ports:
       - "4006:4006"
+
+  llm-service:
+    build: ./services/llm
+    environment:
+      - PORT=4007
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_MODEL=${LLM_MODEL}
+    ports:
+      - "4007:4007"
 
 volumes:
   auth_db_data:

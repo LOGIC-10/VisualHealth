@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 4004;
 const { Pool } = pkg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const VIZ_BASE = process.env.VIZ_BASE || 'http://viz-service:4006';
+const LLM_SVC = process.env.LLM_SVC || 'http://llm-service:4007';
 
 async function init() {
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -240,9 +241,41 @@ app.post('/records/:id/ai_start', async (req, res) => {
         });
         const metrics = await m.json();
         if (metrics?.error) throw new Error(metrics.error);
-        const a = await fetch(VIZ_BASE + '/ai_pcg_analysis', {
+        // Build LLM prompt outside of algorithm service (decoupled)
+        const L = lang || 'zh';
+        let sys, user;
+        if (L === 'zh') {
+          sys = (
+            '你是一名心血管科医生助手。' +
+            '根据给定的心音算法指标，生成非诊断性意见。' +
+            '要求：使用中文，严格按 Markdown 输出，包含清晰的小标题、列表、重点加粗。' +
+            '语气客观谨慎；若证据不足，请明确说明不确定。'
+          );
+          user = (
+            '请基于以下 JSON 指标，按 Markdown 输出三个部分:\n' +
+            '## 总结\n简要 2-3 句。\n\n' +
+            '## 可能的风险\n若无明显异常，写：未见明显异常。\n\n' +
+            '## 建议\n包含生活方式、是否建议复测、何时就医等。\n\n' +
+            '### 指标\n```json\n' + JSON.stringify(metrics) + '\n```'
+          );
+        } else {
+          sys = (
+            'You are a cardiology assistant.' +
+            ' Based on PCG metrics, produce a non-diagnostic report in English.' +
+            ' Requirements: strictly output Markdown with headings, bullet lists, and bold highlights.' +
+            ' Be clear and cautious; state uncertainty when evidence is insufficient.'
+          );
+          user = (
+            'Using the JSON metrics below, return three Markdown sections:\n' +
+            '## Summary\n2–3 sentences.\n\n' +
+            '## Potential Risks\nIf none, say: No obvious abnormality.\n\n' +
+            '## Advice\nLifestyle, whether to retest, and when to see a doctor.\n\n' +
+            '### Metrics\n```json\n' + JSON.stringify(metrics) + '\n```'
+          );
+        }
+        const a = await fetch(LLM_SVC + '/chat', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ metrics, lang: lang || 'zh' })
+          body: JSON.stringify({ messages: [ { role: 'system', content: sys }, { role: 'user', content: user } ], temperature: 0.2 })
         });
         const aj = await a.json();
         if (aj?.error) throw new Error(aj.error);

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useI18n } from '../components/i18n';
+import { renderMarkdown } from '../components/markdown';
 import WaveSurfer from 'wavesurfer.js';
 // Spectrogram plugin removed; use server-rendered demo spectrogram instead
 
@@ -214,6 +215,57 @@ export default function HomePage() {
           <h2 style={{ fontSize: 32, marginBottom: 8 }}>{t('DemoTitle')}</h2>
           <p style={{ color:'#475569', marginBottom:12 }}>{t('DemoDesc')}</p>
           <Demo />
+        </div>
+      </section>
+      {/* 3.5 AI Promo */}
+      <section style={{ padding: '64px 24px', background: 'linear-gradient(180deg, #f8fafc, #ffffff)' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:20, alignItems:'stretch' }}>
+            <div>
+              <h2 style={{ fontSize: 32, marginBottom: 8 }}>{t('HomeAITitle')}</h2>
+              <p style={{ color:'#475569', marginBottom:20 }}>{t('HomeAIDesc')}</p>
+              <div style={{ display:'grid', gap:12 }}>
+                {[{t:t('HomeAIPillar1Title'),d:t('HomeAIPillar1Desc')},{t:t('HomeAIPillar2Title'),d:t('HomeAIPillar2Desc')},{t:t('HomeAIPillar3Title'),d:t('HomeAIPillar3Desc')}].map((c,i)=> (
+                  <div key={i} style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:16, padding:16, display:'flex', alignItems:'flex-start', gap:12 }}>
+                    <div style={{ width:28, height:28, minWidth:28, minHeight:28, flexShrink:0, borderRadius:9999, background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:14, lineHeight:'28px' }}>✓</div>
+                    <div>
+                      <div style={{ fontWeight:600, marginBottom:4 }}>{c.t}</div>
+                      <div style={{ color:'#475569', fontSize:14 }}>{c.d}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop:16, display:'flex', gap:12 }}>
+                <button onClick={openGuide} style={{ padding:'12px 16px', borderRadius:12, background:'#111', color:'#fff', cursor:'pointer' }}>{t('GetStarted')}</button>
+                <a href="/analysis" style={{ padding:'12px 16px', borderRadius:12, background:'#e5e7eb', color:'#111', textDecoration:'none' }}>{t('Analysis')}</a>
+              </div>
+            </div>
+            <div>
+              <div style={{ borderRadius:16, padding:16, background:'linear-gradient(135deg, #eef2ff, #ecfeff)' , border:'1px solid #e5e7eb' }}>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:10 }}>
+                  <span style={{ padding:'4px 10px', borderRadius:9999, background:'#fff', border:'1px solid #c7d2fe', color:'#3730a3', fontSize:12 }}>{t('HomeAIStat1')}</span>
+                  <span style={{ padding:'4px 10px', borderRadius:9999, background:'#fff', border:'1px solid #a5f3fc', color:'#0e7490', fontSize:12 }}>{t('HomeAIStat2')}</span>
+                  <span style={{ padding:'4px 10px', borderRadius:9999, background:'#fff', border:'1px solid #bbf7d0', color:'#166534', fontSize:12 }}>{t('HomeAIStat3')}</span>
+                </div>
+                <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+                  <div style={{ fontWeight:700, fontSize:18, marginBottom:8 }}>{t('HomeAISampleTitle')}</div>
+                  <div style={{ marginBottom:8 }}>
+                    <div style={{ fontWeight:600, marginBottom:4 }}>Summary</div>
+                    <div style={{ color:'#0f172a', fontSize:14 }}>{t('HomeAISampleSummary')}</div>
+                  </div>
+                  <div style={{ marginBottom:8 }}>
+                    <div style={{ fontWeight:600, marginBottom:4 }}>Potential Risks</div>
+                    <div style={{ color:'#0f172a', fontSize:14 }}>{t('HomeAISampleRisks')}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:600, marginBottom:4 }}>Advice</div>
+                    <div style={{ color:'#0f172a', fontSize:14 }}>{t('HomeAISampleAdvice')}</div>
+                  </div>
+                </div>
+                <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>{t('HomeAIFineprint')}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
       {/* 4. Medical endorsement (removed per request) */}

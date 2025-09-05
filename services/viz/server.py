@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body
 from fastapi.responses import Response, JSONResponse
-from ai_heart import analyze_pcg_from_pcm, generate_ai_report
+from ai_heart import analyze_pcg_from_pcm
 
 PORT = int(os.getenv('PORT', '4006'))
 
@@ -483,13 +483,4 @@ async def hard_algo_metrics(
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
-@app.post('/ai_pcg_analysis')
-async def ai_pcg_analysis(
-    metrics: dict = Body(...),
-    lang: str = Body('zh')
-):
-    try:
-        r = generate_ai_report(metrics, lang or 'zh')
-        return r
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+# LLM-related endpoints have been moved to a dedicated llm-service

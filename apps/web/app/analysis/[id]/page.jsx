@@ -44,6 +44,7 @@ export default function AnalysisDetail({ params }) {
   const [aiErr, setAiErr] = useState('');
   const [aiSubmitted, setAiSubmitted] = useState(false);
   const [pcmPayload, setPcmPayload] = useState(null);
+  const [currentTime, setCurrentTime] = useState(0);
   // Gain control
   const [gainOpen, setGainOpen] = useState(false);
   const [gainOn, setGainOn] = useState(false);
@@ -544,6 +545,26 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => () => { disableGainPipeline(); }, []);
 
+  // 监听音频播放时间变化，确保播放指针实时更新
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateTime = () => setCurrentTime(audio.currentTime || 0);
+    
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('seeked', updateTime);
+    audio.addEventListener('play', updateTime);
+    audio.addEventListener('pause', updateTime);
+    
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('seeked', updateTime);
+      audio.removeEventListener('play', updateTime);
+      audio.removeEventListener('pause', updateTime);
+    };
+  }, [audioUrl]);
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -554,23 +575,38 @@ export default function AnalysisDetail({ params }) {
     const isZoom = e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > Math.abs(e.deltaX);
     const currentPx = pxPerSec;
     const minPx = duration > 0 ? (rect.width / duration) : 10;
-    // Use pxPerSec as the single source of truth for mapping time<->pixels
-    const secPerPx = 1 / currentPx;
+    
     if (isZoom) {
+      // 改进的缩放逻辑：基于当前可见区域进行居中缩放
       const x = e.clientX - rect.left;
       const frac = Math.max(0, Math.min(1, x / rect.width));
-      const pivotSec = (wrapper.scrollLeft + x) * secPerPx;
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const next = Math.max(minPx, Math.min(5000, currentPx * (1 / factor)));
+      
+      // 计算当前可见区域的中心时间点
+      const currentScroll = wrapper.scrollLeft;
+      const currentStartSec = currentScroll / currentPx;
+      const currentViewSec = rect.width / currentPx;
+      const currentCenterSec = currentStartSec + currentViewSec * 0.5;
+      
+      // 使用更精确的缩放因子
+      const zoomFactor = e.deltaY < 0 ? 1.2 : 0.8;
+      const next = Math.max(minPx, Math.min(5000, currentPx * zoomFactor));
+      
+      // 更新缩放
       setPxPerSec(next);
       wsRef.current.zoom(next);
-      const newScrollLeft = Math.max(0, pivotSec * next - frac * rect.width);
+      
+      // 计算新的滚动位置，保持中心时间点不变
+      const newViewSec = rect.width / next;
+      const newStartSec = Math.max(0, Math.min(duration - newViewSec, currentCenterSec - newViewSec * 0.5));
+      const newScrollLeft = newStartSec * next;
       const maxScroll = Math.max(0, next * duration - rect.width);
-      // Apply after zoom paint to ensure alignment
+      
+      // 应用新的滚动位置
       requestAnimationFrame(() => {
         wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
       });
     } else {
+      // 平移逻辑保持不变
       const current = wrapper.scrollLeft + (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
       const maxScroll = Math.max(0, currentPx * duration - rect.width);
       wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, current));
@@ -655,14 +691,25 @@ export default function AnalysisDetail({ params }) {
       } else {
         const scale = dist / pinchRef.current.startDist;
         const centerX = (t1.clientX + t2.clientX) / 2 - rect.left;
-        const frac = Math.max(0, Math.min(1, centerX / rect.width));
-        const pivotSec = (waveWrapRef.current.scrollLeft + centerX) / pxPerSec;
+        
+        // 计算当前可见区域的中心时间点
+        const currentScroll = waveWrapRef.current.scrollLeft;
+        const currentStartSec = currentScroll / pxPerSec;
+        const currentViewSec = rect.width / pxPerSec;
+        const currentCenterSec = currentStartSec + currentViewSec * 0.5;
+        
         const minPx = duration > 0 ? (rect.width / duration) : 10;
         const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
+        
         setPxPerSec(next);
         wsRef.current.zoom(next);
-        const newScrollLeft = Math.max(0, pivotSec * next - frac * rect.width);
+        
+        // 计算新的滚动位置，保持中心时间点不变
+        const newViewSec = rect.width / next;
+        const newStartSec = Math.max(0, Math.min(duration - newViewSec, currentCenterSec - newViewSec * 0.5));
+        const newScrollLeft = newStartSec * next;
         const maxScroll = Math.max(0, next * duration - rect.width);
+        
         waveWrapRef.current.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
       }
     }
@@ -685,16 +732,23 @@ export default function AnalysisDetail({ params }) {
       ctx.clearRect(0,0,w,h);
       ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
       ctx.strokeStyle = '#e5e7eb'; ctx.beginPath(); ctx.moveTo(0, h-0.5); ctx.lineTo(w, h-0.5); ctx.stroke();
+      
+      // 确保使用一致的像素每秒值
       const pps = pxPerSec > 0 ? pxPerSec : (wsRef.current?.options?.minPxPerSec || 100);
       const scroll = wrap.scrollLeft || 0;
+      
+      // 修复时间计算：确保精确计算可见区域的开始时间
       const startSec = scroll / pps;
       const viewSec = w / pps;
       const endSec = Math.min(duration || 0, startSec + viewSec);
+      
       // Choose tick spacing for ~60px per tick
       const steps = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,30,60];
       let step = 1; for (const s of steps) { if (s * pps >= 60) { step = s; break; } }
       const first = Math.floor(startSec / step) * step;
       ctx.fillStyle = '#64748b'; ctx.font = '12px system-ui, -apple-system, Segoe UI, sans-serif';
+      
+      // 绘制时间刻度
       for (let t = first; t <= endSec + 1e-9; t += step) {
         const x = Math.round((t - startSec) * pps) + 0.5;
         const majorEvery = 5;
@@ -707,11 +761,24 @@ export default function AnalysisDetail({ params }) {
           ctx.fillText(label + 's', x + 2, 12);
         }
       }
-      // Playhead marker
-      const a = audioRef.current; if (a) {
-        const playX = (Math.max(0, Math.min(duration || 0, a.currentTime)) - startSec) * pps;
-        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
+      
+      // 播放指针 - 确保与波形图严格同步
+      if (duration > 0 && currentTime >= 0) {
+        const playTime = Math.max(0, Math.min(duration, currentTime));
+        // 确保播放指针位置计算与波形图完全一致
+        const playX = (playTime - startSec) * pps;
+        // 只有当播放指针在可见区域内时才绘制
+        if (playX >= -1 && playX <= w + 1) {
+          ctx.strokeStyle = '#ef4444'; 
+          ctx.lineWidth = 2;
+          ctx.beginPath(); 
+          ctx.moveTo(playX + 0.5, 0); 
+          ctx.lineTo(playX + 0.5, h); 
+          ctx.stroke();
+          ctx.lineWidth = 1; // 重置线宽
+        }
       }
+      
       // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
         const decimals = viewSec < 1 ? 2 : viewSec < 10 ? 1 : 0;
@@ -724,7 +791,7 @@ export default function AnalysisDetail({ params }) {
     };
     raf = requestAnimationFrame(draw);
     return () => { running = false; if (raf) cancelAnimationFrame(raf); };
-  }, [pxPerSec, duration]);
+  }, [pxPerSec, duration, currentTime]);
 
   if (!token) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>

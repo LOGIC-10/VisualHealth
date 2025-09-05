@@ -1,0 +1,28 @@
+/* Global theme and base styles */
+:root { color-scheme: light dark; }
+
+html, body { margin: 0; }
+body { font-family: ui-sans-serif, system-ui, -apple-system; }
+
+[data-theme='light'] body {
+  color: #0f172a;
+  background-color: #ffffff;
+  background-image: url('/images/HeartHealthBackground_day.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+[data-theme='dark'] body {
+  color: #e2e8f0;
+  background-color: #0b1220;
+  background-image: url('/images/HeartHealthBackground_night.png');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+a { color: inherit; }
+

@@ -3,7 +3,8 @@ from typing import List, Dict, Any
 
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+import json
 
 try:
     from openai import OpenAI
@@ -55,3 +56,51 @@ async def chat(
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
+
+@app.post('/chat_sse')
+async def chat_sse(
+    messages: List[Dict[str, Any]] = Body(...),
+    model: str = Body(os.getenv("LLM_MODEL", "gpt-4o-mini")),
+    temperature: float = Body(0.2)
+):
+    """Server-Sent Events streaming chat. Emits lines starting with 'data: {json}'."""
+    try:
+        client = _client()
+        if client is None:
+            return JSONResponse({"error": "LLM not configured"}, status_code=400)
+
+        def gen():
+            try:
+                stream = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages],
+                    temperature=temperature,
+                    stream=True,
+                )
+                # Accumulate full text for potential tail use
+                full = []
+                for chunk in stream:
+                    try:
+                        delta = None
+                        ch = chunk.choices[0]
+                        # OpenAI SDK returns delta.content for streamed chunks
+                        delta = getattr(ch, 'delta', None)
+                        if isinstance(delta, dict):
+                            piece = delta.get('content')
+                        else:
+                            # Fallback shapes
+                            piece = getattr(ch, 'message', {}).get('content') if getattr(ch, 'message', None) else None
+                        if piece:
+                            full.append(piece)
+                            yield f"data: {json.dumps({'delta': piece})}\n\n"
+                    except Exception:
+                        # best-effort continue
+                        continue
+                yield f"data: {json.dumps({'done': True, 'model': model})}\n\n"
+            except Exception as e:
+                err = str(e)
+                yield f"data: {json.dumps({'error': err})}\n\n"
+
+        return StreamingResponse(gen(), media_type='text/event-stream')
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)

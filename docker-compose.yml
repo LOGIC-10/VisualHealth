@@ -11,6 +11,7 @@ services:
       - NEXT_PUBLIC_API_ANALYSIS=http://localhost:4004
       - NEXT_PUBLIC_API_FEED=http://localhost:4005
       - NEXT_PUBLIC_API_VIZ=http://localhost:4006
+      - NEXT_PUBLIC_API_LLM=http://localhost:4007
     depends_on:
       - auth-service
       - media-service

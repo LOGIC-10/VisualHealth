@@ -8,9 +8,11 @@ const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
 
 export default function AnalysisListPage() {
   const { t } = useI18n();
-  const [token, setToken] = useState(() => {
-    try { return localStorage.getItem('vh_token'); } catch { return null; }
-  });
+  // Avoid SSR/CSR mismatch: init as null and set after mount
+  const [token, setToken] = useState(null);
+  useEffect(() => {
+    try { setToken(localStorage.getItem('vh_token')); } catch { setToken(''); }
+  }, []);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -299,7 +301,7 @@ export default function AnalysisListPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '24px auto', padding: '0 24px' }}>
+    <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap: 8 }}>
         <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('AnalysisTitle')}</h1>
         <div style={{ display:'flex', alignItems:'center', gap:8, position:'relative' }}>

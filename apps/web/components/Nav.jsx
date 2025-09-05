@@ -61,7 +61,7 @@ export default function Nav() {
     <nav style={{ position: 'sticky', top: 0, zIndex: 10, background: isDark ? 'rgba(11,18,32,0.92)' : 'rgba(255,255,255,0.92)', borderBottom: `1px solid ${isDark ? '#283548' : '#e5e7eb'}`, boxShadow: isDark ? '0 1px 8px rgba(0,0,0,0.25)' : '0 1px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems:'center', justifyContent:'space-between', gap: 16, padding: '14px 24px' }}>
       <div style={{ display:'flex', alignItems:'center', gap:18 }}>
         <a href="/" style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', textDecoration: 'none', color: isDark ? '#f8fafc' : '#0f172a' }}>VisualHealth</a>
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 16 }} suppressHydrationWarning>
           <a href="/analysis" style={{ textDecoration: 'none', color: isDark ? '#cbd5e1' : '#334155', fontWeight: 600 }}>{T('Analysis')}</a>
           <a href="/community" style={{ textDecoration: 'none', color: isDark ? '#cbd5e1' : '#334155', fontWeight: 600 }}>{T('Community')}</a>
         </div>
@@ -100,29 +100,7 @@ export default function Nav() {
           </div>
         )}
       </div>
-      {/* Global theme basics */}
-      <style>{`
-        :root { color-scheme: light dark; }
-        [data-theme='light'] body {
-          color:#0f172a;
-          background-color:#ffffff;
-          background-image: url('/images/HeartHealthBackground_day.png');
-          background-size: cover;
-          background-position: center;
-          background-attachment: fixed;
-          background-repeat: no-repeat;
-        }
-        [data-theme='dark'] body {
-          color:#e2e8f0;
-          background-color:#0b1220;
-          background-image: url('/images/HeartHealthBackground_night.png');
-          background-size: cover;
-          background-position: center;
-          background-attachment: fixed;
-          background-repeat: no-repeat;
-        }
-        a { color: inherit; }
-      `}</style>
+      {/* Theme styles are in app/globals.css */}
     </nav>
   );
 }

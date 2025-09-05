@@ -3,12 +3,13 @@ export const metadata = {
   description: 'Global heart sound analysis and community'
 };
 
+import './globals.css';
 import Nav from '../components/Nav';
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, fontFamily: 'ui-sans-serif, system-ui, -apple-system' }}>
+    <html lang="en" data-lang="en" data-theme="light">
+      <body>
         <Nav />
         <main>{children}</main>
       </body>

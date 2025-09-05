@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  frontend:
+    command: sh -c "npm install && npm run dev"
+    # Mount source for instant hot-reload on change
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    environment:
+      - WATCHPACK_POLLING=true
+      - WATCHPACK_POLLING_INTERVAL=500
+      - CHOKIDAR_USEPOLLING=true
+
+volumes:
+  web_node_modules:

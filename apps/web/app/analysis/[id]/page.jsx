@@ -9,6 +9,7 @@ const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
 
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
+const LLM_BASE = process.env.NEXT_PUBLIC_API_LLM || 'http://localhost:4007';
 
 export default function AnalysisDetail({ params }) {
   const { t, lang } = useI18n();
@@ -51,6 +52,92 @@ export default function AnalysisDetail({ params }) {
   const compNodeRef = useRef(null);
   const prevVolRef = useRef(1);
   const [waveFocused, setWaveFocused] = useState(false);
+  const [navOffset, setNavOffset] = useState(96);
+  useEffect(() => {
+    try {
+      const nav = document.querySelector('nav');
+      if (nav) {
+        const h = Math.ceil(nav.getBoundingClientRect().height);
+        setNavOffset(h + 16);
+      }
+    } catch {}
+  }, []);
+
+  // Chat state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState([]); // [{role:'user'|'assistant', content:string}]
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatErr, setChatErr] = useState('');
+
+  function buildChatContext(){
+    const ctx = [];
+    if (meta?.ai) {
+      const ttxt = (meta.ai.texts && meta.ai.texts[lang]) || meta.ai.text || '';
+      if (ttxt) ctx.push(`Analysis (Markdown):\n\n${ttxt}`);
+      try { if (meta.ai.metrics) ctx.push(`Metrics: ${JSON.stringify(meta.ai.metrics)}`); } catch {}
+    }
+    return ctx.join('\n\n');
+  }
+
+  async function sendChat(userText){
+    if (!userText || chatBusy) return;
+    setChatBusy(true); setChatErr('');
+    const sys = lang==='zh'
+      ? '你是一名心血管科医生助手。基于提供的分析上下文与用户问题，给出可靠、谨慎的回答。'
+      : 'You are a cardiology assistant. Use the provided analysis context and user questions to respond clearly and cautiously.';
+    const ctxText = buildChatContext();
+    const messages = [
+      { role:'system', content: sys },
+      { role:'user', content: (lang==='zh' ? '上下文（仅供参考）：\n' : 'Context (for reference):\n') + ctxText },
+      ...chatMsgs,
+      { role:'user', content: userText }
+    ];
+    setChatMsgs(cur => cur.concat([{ role:'user', content:userText }, { role:'assistant', content:'' }]));
+    try {
+      // Try streaming first (user explicitly wants real-time output)
+      const resp = await fetch(LLM_BASE + '/chat_sse', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Accept':'text/event-stream' },
+        body: JSON.stringify({ messages, temperature: 0.2 })
+      });
+      if (!resp.ok || !resp.body) {
+        // Fallback to non-streaming endpoint
+        const resp2 = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }) });
+        const j2 = await resp2.json().catch(()=>({}));
+        if (!resp2.ok || j2?.error) throw new Error(j2?.error || 'chat failed');
+        const text = j2?.text || '';
+        setChatMsgs(cur => { const c = cur.slice(); const last=c[c.length-1]; if (last && last.role==='assistant') last.content = text; return c; });
+        return;
+      }
+      const reader = resp.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read(); if (done) break;
+        buffer += decoder.decode(value, { stream: true }); let idx;
+        while ((idx = buffer.indexOf('\n\n')) >= 0) {
+          const raw = buffer.slice(0, idx).trim(); buffer = buffer.slice(idx + 2);
+          if (!raw) continue; const line = raw.split('\n').find(l=> l.startsWith('data:')) || raw;
+          const jsonStr = line.replace(/^data:\s*/, '');
+          try {
+            const evt = JSON.parse(jsonStr);
+            if (evt?.delta) setChatMsgs(cur => { const c = cur.slice(); const last=c[c.length-1]; if (last && last.role==='assistant') last.content=(last.content||'')+evt.delta; return c; });
+            if (evt?.error) throw new Error(evt.error);
+          } catch {}
+        }
+      }
+    } catch(e){
+      const msg = e?.message || 'chat failed';
+      setChatErr(msg);
+      // Fill last assistant bubble with error text if empty
+      setChatMsgs(cur => {
+        const c = cur.slice();
+        const last = c[c.length-1];
+        if (last && last.role==='assistant' && !last.content) last.content = msg;
+        return c;
+      });
+    } finally {
+      setChatBusy(false);
+    }
+  }
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
 
@@ -544,7 +631,16 @@ export default function AnalysisDetail({ params }) {
   );
 
   return (
-    <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
+    <div style={{
+      maxWidth: chatOpen ? (960 + 420 + 16) : 960,
+      margin: '24px auto',
+      padding: '0 24px',
+      display: 'grid',
+      gridTemplateColumns: chatOpen ? 'minmax(0, 1fr) minmax(300px, 420px)' : '1fr',
+      gap: 16,
+      alignItems: 'start'
+    }}>
+      <div style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
       <a href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</a>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         {!editing ? (
@@ -714,7 +810,14 @@ export default function AnalysisDetail({ params }) {
       )}
 
       {/* AI Analysis */}
-      <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('AIAnalysis')}</div>
+      <div style={{ display:'flex', alignItems:'center', gap:8, margin:'12px 0 6px' }}>
+        <div style={{ fontSize: 18, fontWeight: 600 }}>{t('AIAnalysis')}</div>
+        {aiText && (
+          <button onClick={()=> setChatOpen(true)} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#0f172a', cursor:'pointer' }}>
+            {t('StartConversation')}
+          </button>
+        )}
+      </div>
       <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
         {!aiText && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
@@ -764,6 +867,52 @@ export default function AnalysisDetail({ params }) {
           </>
         )}
       </div>
+      </div>
+      {chatOpen && (
+        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', marginTop: 12, minWidth:300, maxWidth:420, alignSelf:'start', position:'sticky', top: navOffset, height: `calc(100vh - ${navOffset + 16}px)` }}>
+          <div style={{ padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ fontWeight:600 }}>{t('AIConversation')}</div>
+            <button onClick={()=> setChatOpen(false)} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#64748b' }}>✕</button>
+          </div>
+          <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+            {chatMsgs.length===0 && (
+              <div style={{ color:'#64748b', fontSize:13 }}>{lang==='zh' ? '基于左侧 AI 分析进行追问或咨询。' : 'Ask follow-ups based on the AI analysis on the left.'}</div>
+            )}
+            {chatMsgs.map((m, idx) => {
+              const isUser = m.role==='user';
+              return (
+                <div key={idx} style={{ display:'flex', gap:8, alignItems:'flex-start', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+                  {!isUser && (
+                    <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
+                  )}
+                  <div style={{ maxWidth: 280, background: isUser ? '#111' : '#f1f5f9', color: isUser ? '#fff' : '#0f172a', padding:'8px 10px', borderRadius:12, lineHeight:1.5 }}>
+                    {isUser ? (
+                      <div style={{ whiteSpace:'pre-wrap' }}>{m.content}</div>
+                    ) : (
+                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content || '') }} />
+                    )}
+                    {(!m.content && !isUser && chatBusy) && (
+                      <div style={{ marginTop:6, color:'#64748b', fontSize:12 }}>
+                        <span>Thinking…</span>
+                      </div>
+                    )}
+                  </div>
+                  {isUser && (
+                    <div style={{ width:28, height:28, borderRadius:9999, background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>U</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ padding:12, borderTop:'1px solid #e5e7eb' }}>
+            <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8 }}>
+              <input name="msg" placeholder={t('TypeMessage')} autoComplete="off" style={{ flex:1, padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+              <button type="submit" disabled={chatBusy} style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor:'pointer' }}>{t('Send')}</button>
+            </form>
+            {chatErr && <div style={{ marginTop:6, color:'#b91c1c', fontSize:12 }}>{chatErr}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

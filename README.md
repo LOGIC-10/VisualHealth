@@ -27,6 +27,14 @@ VisualHealth — 心音可视化与社区（微服务架构）
    - Analysis：http://localhost:4004/health
    - Feed：http://localhost:4005/health
 
+热更新（前端）
+- 已提供 docker-compose.override.yml，使前端以开发模式运行（next dev），并挂载源码目录。
+- 代码改动后浏览器会热更新；若未自动热替换，刷新页面即可看到最新效果。
+- 默认启用文件轮询（WATCHPACK_POLLING/CHOKIDAR_USEPOLLING）以兼容 Docker on macOS 的文件事件。
+- 如需单独启动前端开发：
+  - 方式一（Docker）：`docker compose up frontend -d`（会自动 npm install 并运行 dev）。
+  - 方式二（本机）：`cd apps/web && npm install && npm run dev`（其余服务仍通过 Docker 提供）。
+
 账号与登录
 - 前端“Login/Sign up”完成注册/登录；浏览器本地保存 JWT（localStorage: vh_token）。
 - 受保护接口通过 Authorization: Bearer <token> 访问（示例：上传、发帖、点赞等）。
@@ -57,4 +65,3 @@ VisualHealth — 心音可视化与社区（微服务架构）
 注意
 - 首次启动会拉取镜像并构建，耗时较长；M1/M2 架构镜像已支持。
 - 如需变更端口或环境变量，请修改 docker-compose.yml 与相关服务配置。
-

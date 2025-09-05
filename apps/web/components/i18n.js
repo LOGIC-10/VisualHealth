@@ -100,6 +100,10 @@ export const dict = {
     Analyzing: 'Analyzing…',
     SubmittedBG: 'Submitted, processing in background…',
     AIGeneratedAt: 'AI generated at',
+    StartConversation: 'Start Conversation',
+    AIConversation: 'AI Conversation',
+    Send: 'Send',
+    TypeMessage: 'Type a message…',
     HRShort: 'HR',
     S1S2Amp: 'S1:S2 amplitude ratio',
     SystoleSec: 'Systole (s)',
@@ -243,6 +247,10 @@ export const dict = {
     Analyzing: '分析中…',
     SubmittedBG: '已提交，后台生成中…',
     AIGeneratedAt: 'AI已生成于',
+    StartConversation: '开启AI对话',
+    AIConversation: 'AI 对话',
+    Send: '发送',
+    TypeMessage: '输入消息…',
     HRShort: '心率',
     S1S2Amp: 'S1:S2 幅度比',
     SystoleSec: '收缩期（秒）',
@@ -292,11 +300,16 @@ export const dict = {
 
 export function useI18n() {
   const getLang = () => {
+    // Keep SSR and first hydration consistent: prefer document attributes;
+    // if none present, default to 'en' and let effects update after mount.
     if (typeof document !== 'undefined') {
       const d = document.documentElement.getAttribute('data-lang');
       if (d === 'zh' || d === 'en') return d;
+      const h = document.documentElement.getAttribute('lang');
+      if (h === 'zh' || h === 'en') return h;
+      return 'en';
     }
-    try { const s = localStorage.getItem('vh_lang'); if (s === 'zh' || s === 'en') return s; } catch {}
+    // On server, no document/localStorage; use default.
     return 'en';
   };
   const [lang, setLang] = useState(getLang());

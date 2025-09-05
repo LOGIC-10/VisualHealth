@@ -40,6 +40,17 @@ export default function AnalysisDetail({ params }) {
   const [aiErr, setAiErr] = useState('');
   const [aiSubmitted, setAiSubmitted] = useState(false);
   const [pcmPayload, setPcmPayload] = useState(null);
+  // Gain control
+  const [gainOpen, setGainOpen] = useState(false);
+  const [gainOn, setGainOn] = useState(false);
+  const [gainVal, setGainVal] = useState(1);
+  const audioCtxRef = useRef(null);
+  const mediaSrcRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  const gainReadyRef = useRef(false);
+  const compNodeRef = useRef(null);
+  const prevVolRef = useRef(1);
+  const [waveFocused, setWaveFocused] = useState(false);
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
 
@@ -147,9 +158,18 @@ export default function AnalysisDetail({ params }) {
       if (!blob) { setAudioError('无法加载音频文件（可能的权限或密钥问题）'); return; }
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
+      // Keep existing WebAudio graph; no rewiring needed on src change
       // compute extra features once (off-UI path)
       try {
-        setLoading(s=>({ ...s, decode:true, extra:true, adv:true, spec:true })); setProgress(0);
+        // Only show progress for modules that are not yet stored (adv/spec)
+        const needAdv = !(meta && meta.adv);
+        const needSpec = !(meta && meta.spec_media_id);
+        const steps = (needAdv ? 1 : 0) + (needSpec ? 1 : 0);
+        const per = steps > 0 ? (1 / steps) : 0;
+
+        // Initialize loading flags: do not surface decode/extra in progress bar
+        setLoading(s=>({ ...s, decode:false, extra:false, adv:needAdv, spec:needSpec }));
+        setProgress(0);
         const arr = await blob.arrayBuffer();
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const buf = await audioCtx.decodeAudioData(arr.slice(0));
@@ -166,15 +186,15 @@ export default function AnalysisDetail({ params }) {
         const featuresP = (async ()=>{
           const resp = await fetch(VIZ_BASE + '/features_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
           if (resp.ok) setExtra(await resp.json());
-          setLoading(s=>({ ...s, extra:false })); setProgress(p=>p+0.25);
+          setLoading(s=>({ ...s, extra:false }));
         })();
-        const advP = (async ()=>{
+        const advP = needAdv ? (async ()=>{
           const resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
           if (resp.ok) setAdv(await resp.json());
-          setLoading(s=>({ ...s, adv:false })); setProgress(p=>p+0.25);
-        })();
+          setLoading(s=>({ ...s, adv:false })); if (per>0) setProgress(p=>p+per);
+        })() : Promise.resolve();
         const width = Math.max(800, Math.min(1400, Math.floor((typeof window!=='undefined'? window.innerWidth:1200) - 80)));
-        const specP = (async ()=>{
+        const specP = needSpec ? (async ()=>{
           const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width, height: 320 }) });
           if (resp.ok) {
             const imgBlob = await resp.blob();
@@ -190,8 +210,8 @@ export default function AnalysisDetail({ params }) {
               }
             } catch {}
           }
-          setLoading(s=>({ ...s, spec:false })); setProgress(p=>p+0.25);
-        })();
+          setLoading(s=>({ ...s, spec:false })); if (per>0) setProgress(p=>p+per);
+        })() : Promise.resolve();
         await Promise.allSettled([featuresP, advP, specP]);
         // cache adv to record if not present
         try {
@@ -247,6 +267,93 @@ export default function AnalysisDetail({ params }) {
     };
   }, [audioUrl]);
 
+  async function setupGainPipeline(){
+    const el = audioRef.current; if (!el) return;
+    if (!audioCtxRef.current) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      audioCtxRef.current = new AC();
+    }
+    const ctx = audioCtxRef.current;
+    try { await ctx.resume?.(); } catch {}
+    // Remember current element volume, and avoid toggling the 'muted' UI state
+    try { prevVolRef.current = typeof el.volume === 'number' ? el.volume : 1; } catch { prevVolRef.current = 1; }
+    if (!mediaSrcRef.current) {
+      mediaSrcRef.current = ctx.createMediaElementSource(el);
+    }
+    if (!gainNodeRef.current) {
+      gainNodeRef.current = ctx.createGain();
+    }
+    if (!compNodeRef.current) {
+      const c = ctx.createDynamicsCompressor?.();
+      if (c) {
+        try {
+          c.threshold.setValueAtTime(-10, ctx.currentTime);
+          c.knee.setValueAtTime(12, ctx.currentTime);
+          c.ratio.setValueAtTime(4, ctx.currentTime);
+          c.attack.setValueAtTime(0.003, ctx.currentTime);
+          c.release.setValueAtTime(0.25, ctx.currentTime);
+        } catch {}
+        compNodeRef.current = c;
+      }
+    }
+    try { mediaSrcRef.current.disconnect(); } catch {}
+    try { gainNodeRef.current.disconnect(); } catch {}
+    if (compNodeRef.current) {
+      mediaSrcRef.current.connect(gainNodeRef.current);
+      gainNodeRef.current.connect(compNodeRef.current);
+      compNodeRef.current.connect(ctx.destination);
+    } else {
+      mediaSrcRef.current.connect(gainNodeRef.current);
+      gainNodeRef.current.connect(ctx.destination);
+    }
+    // Prepare gain at tiny value; actual ramp handled by crossfade helpers
+    try { gainNodeRef.current.gain.setValueAtTime(0.0001, ctx.currentTime); } catch {}
+    gainReadyRef.current = true;
+  }
+
+  function disableGainPipeline(){
+    // Keep pipeline connected; normalize to 1x so playback continues identically
+    const ctx = audioCtxRef.current; const g = gainNodeRef.current;
+    if (ctx && g) {
+      try { g.gain.setTargetAtTime(1.0, ctx.currentTime, 0.02); } catch { try { g.gain.value = 1.0; } catch {} }
+    }
+  }
+
+  function applyEffectiveGain(initial=false){
+    const ctx = audioCtxRef.current; const g = gainNodeRef.current; if (!ctx || !g) return;
+    // Map UI range [1,5] to stronger gain, but keep 1.0 as true 1x on enable
+    const BASE_MULT = 20; // >1 values get boosted
+    const eff = (initial || gainVal <= 1.0001) ? 1 : Math.max(1, BASE_MULT * gainVal);
+    try {
+      if (initial) {
+        // quick ramp to avoid click and preserve continuity
+        g.gain.cancelScheduledValues(ctx.currentTime);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(Math.max(1, eff), ctx.currentTime + 0.05);
+      } else {
+        g.gain.setTargetAtTime(eff, ctx.currentTime, 0.02);
+      }
+    } catch { try { g.gain.value = eff; } catch {} }
+  }
+
+  // Smooth helpers removed to simplify and avoid side-effects
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (gainOn) {
+      if (!gainReadyRef.current) {
+        setupGainPipeline().then(() => applyEffectiveGain(true));
+      } else {
+        applyEffectiveGain();
+      }
+    } else {
+      // Turning off keeps pipeline at 1x; playback continues
+      disableGainPipeline();
+    }
+  }, [gainVal, gainOn]);
+
+  useEffect(() => () => { disableGainPipeline(); }, []);
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -257,8 +364,8 @@ export default function AnalysisDetail({ params }) {
     const isZoom = e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > Math.abs(e.deltaX);
     const currentPx = pxPerSec;
     const minPx = duration > 0 ? (rect.width / duration) : 10;
-    const totalW = wrapper.scrollWidth || (currentPx * (duration || 0));
-    const secPerPx = (duration && totalW) ? (duration / totalW) : (1 / currentPx);
+    // Use pxPerSec as the single source of truth for mapping time<->pixels
+    const secPerPx = 1 / currentPx;
     if (isZoom) {
       const x = e.clientX - rect.left;
       const frac = Math.max(0, Math.min(1, x / rect.width));
@@ -303,7 +410,7 @@ export default function AnalysisDetail({ params }) {
     const wrapper = waveWrapRef.current; if (!wrapper) return;
     const dx = e.clientX - lastXRef.current; lastXRef.current = e.clientX;
     const rect = wrapper.getBoundingClientRect();
-    const pps = wsRef.current?.options?.minPxPerSec || pxPerSec;
+    const pps = pxPerSec;
     const maxScroll = Math.max(0, pps * duration - rect.width);
     if (Math.abs(e.clientX - downXRef.current) > 3) movedRef.current = true;
     wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, wrapper.scrollLeft - dx)); // drag to pan with bounds
@@ -372,53 +479,61 @@ export default function AnalysisDetail({ params }) {
   }
   function onTouchEnd(){ pinchRef.current.startDist = 0; }
 
-  // Time ruler (clamped to duration)
+  // Time ruler (strictly synced to waveform zoom/pan/playback)
   useEffect(() => {
-    function draw() {
-      const c = rulerRef.current; const wrap = waveWrapRef.current; if (!c || !wrap || !wsRef.current) return;
+    let raf = 0; let running = true;
+    const draw = () => {
+      if (!running) return;
+      const c = rulerRef.current; const wrap = waveWrapRef.current; if (!c || !wrap || !wsRef.current) { raf = requestAnimationFrame(draw); return; }
       const ctx = c.getContext('2d');
-      const w = wrap.clientWidth; const h = 26; c.width = w * devicePixelRatio; c.height = h * devicePixelRatio; c.style.height = h + 'px';
+      const w = wrap.clientWidth; const h = 26; if (w <= 0) { raf = requestAnimationFrame(draw); return; }
+      if (c.width !== Math.floor(w * devicePixelRatio) || c.height !== Math.floor(h * devicePixelRatio)) {
+        c.width = w * devicePixelRatio; c.height = h * devicePixelRatio; c.style.height = h + 'px';
+      }
       ctx.setTransform(1,0,0,1,0,0);
       ctx.scale(devicePixelRatio, devicePixelRatio);
       ctx.clearRect(0,0,w,h);
       ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
       ctx.strokeStyle = '#e5e7eb'; ctx.beginPath(); ctx.moveTo(0, h-0.5); ctx.lineTo(w, h-0.5); ctx.stroke();
-      const pps = pxPerSec; // use state for current zoom (px/sec)
+      const pps = pxPerSec > 0 ? pxPerSec : (wsRef.current?.options?.minPxPerSec || 100);
       const scroll = wrap.scrollLeft || 0;
       const startSec = scroll / pps;
       const viewSec = w / pps;
       const endSec = Math.min(duration || 0, startSec + viewSec);
-      // Choose tick spacing
-      const steps = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10];
+      // Choose tick spacing for ~60px per tick
+      const steps = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,30,60];
       let step = 1; for (const s of steps) { if (s * pps >= 60) { step = s; break; } }
       const first = Math.floor(startSec / step) * step;
       ctx.fillStyle = '#64748b'; ctx.font = '12px system-ui, -apple-system, Segoe UI, sans-serif';
       for (let t = first; t <= endSec + 1e-9; t += step) {
         const x = Math.round((t - startSec) * pps) + 0.5;
-        const isMajor = (Math.abs((t/ (step*5)) - Math.round(t/(step*5))) < 1e-6);
+        const majorEvery = 5;
+        const isMajor = (Math.round(t / step) % majorEvery) === 0;
         const tick = isMajor ? 10 : 6;
         ctx.strokeStyle = '#cbd5e1'; ctx.beginPath(); ctx.moveTo(x, h-1); ctx.lineTo(x, h-1-tick); ctx.stroke();
-        const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
-        const label = Math.max(0, Math.min(duration || 0, t)).toFixed(decimals);
-        if (isMajor) ctx.fillText(label + 's', x + 2, 12);
+        if (isMajor) {
+          const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
+          const label = Math.max(0, Math.min(duration || 0, t)).toFixed(decimals);
+          ctx.fillText(label + 's', x + 2, 12);
+        }
       }
       // Playhead marker
       const a = audioRef.current; if (a) {
         const playX = (Math.max(0, Math.min(duration || 0, a.currentTime)) - startSec) * pps;
         ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
       }
-      // Draw total duration at the far right when full view is shown
+      // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
-        const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
+        const decimals = viewSec < 1 ? 2 : viewSec < 10 ? 1 : 0;
         const text = (duration || 0).toFixed(decimals) + 's';
         const tw = ctx.measureText(text).width;
         ctx.fillStyle = '#334155';
         ctx.fillText(text, Math.max(0, w - tw - 4), 12);
       }
-      requestAnimationFrame(draw);
-    }
-    const id = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(id);
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => { running = false; if (raf) cancelAnimationFrame(raf); };
   }, [pxPerSec, duration]);
 
   if (!token) return (
@@ -456,11 +571,30 @@ export default function AnalysisDetail({ params }) {
       {/* Sub-title: Waveform */}
       <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px' }}>{t('Waveform')}</div>
       {meta && (
-        <div style={{ color:'#64748b', fontSize:13, marginBottom:8 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
+          <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
+          {audioUrl && (
+            <div style={{ display:'flex', alignItems:'center', gap:8, color:'#64748b', fontSize:12 }}>
+              <button onClick={async ()=>{
+                if (!gainOn) { setGainOn(true); setGainOpen(true); }
+                else { setGainOn(false); setGainOpen(false); disableGainPipeline(); /* keep graph alive */ }
+              }} style={{ padding:'2px 6px', borderRadius:6, border:'none', background:'transparent', color:'#64748b', cursor:'pointer' }}>
+                {t('AudioGain')} · {gainOn ? t('GainOn') : t('GainOff')}
+              </button>
+              {gainOn && (
+                <>
+                  <span>{t('GainLabel')}</span>
+                  <input className="vh-range" type="range" min={1} max={5} step={0.1} value={gainVal} onChange={e=> setGainVal(parseFloat(e.target.value)||1)} style={{ width:160 }} />
+                  <span style={{ minWidth:38, textAlign:'right' }}>{gainVal.toFixed(1)}x</span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Waveform (client-rendered, smooth) */}
-      { (loading.decode || loading.extra || loading.adv || loading.spec) && (
+      { (loading.adv || loading.spec) && (
         <div style={{ marginTop:8, height:6, background:'#e5e7eb', borderRadius:6, overflow:'hidden' }}>
           <div style={{ width: `${Math.round(Math.min(1, progress)*100)}%`, height:'100%', background:'#2563eb', transition:'width 200ms linear' }} />
         </div>
@@ -475,6 +609,19 @@ export default function AnalysisDetail({ params }) {
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
+          onFocus={()=>setWaveFocused(true)}
+          onBlur={()=>setWaveFocused(false)}
+          onKeyDown={(e)=>{
+            if (!waveFocused) return;
+            if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+              e.preventDefault(); e.stopPropagation();
+              const a = audioRef.current; if (!a) return;
+              if (a.paused) { a.play?.(); } else { a.pause?.(); }
+            }
+          }}
+          tabIndex={0}
+          role="region"
+          aria-label="waveform"
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
           style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
@@ -500,6 +647,14 @@ export default function AnalysisDetail({ params }) {
         {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
       </div>
       <style>{`.vh-spin{width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
+      <style>{`
+        .vh-range{ -webkit-appearance:none; appearance:none; height:6px; background:#e5e7eb; border-radius:9999px; outline:none; }
+        .vh-range:focus{ outline:none; }
+        .vh-range::-webkit-slider-runnable-track{ height:6px; background:#e5e7eb; border-radius:9999px; }
+        .vh-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:14px; height:14px; border-radius:9999px; background:#94a3b8; border:1px solid #cbd5e1; margin-top:-4px; }
+        .vh-range::-moz-range-track{ height:6px; background:#e5e7eb; border-radius:9999px; }
+        .vh-range::-moz-range-thumb{ width:14px; height:14px; border:none; border-radius:9999px; background:#94a3b8; }
+      `}</style>
 
       {/* Clinical PCG Analysis */}
       {adv && (

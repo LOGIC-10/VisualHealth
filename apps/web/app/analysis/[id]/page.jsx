@@ -51,6 +51,7 @@ export default function AnalysisDetail({ params }) {
   const compNodeRef = useRef(null);
   const prevVolRef = useRef(1);
   const [waveFocused, setWaveFocused] = useState(false);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
 
@@ -354,6 +355,31 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => () => { disableGainPipeline(); }, []);
 
+  // 监听音频播放状态变化，确保时间刻度实时更新
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateCurrentTime = () => {
+      setAudioCurrentTime(audio.currentTime);
+    };
+
+    const events = ['play', 'pause', 'seeked', 'timeupdate'];
+    events.forEach(event => {
+      audio.addEventListener(event, updateCurrentTime);
+    });
+
+    // 定期更新当前时间以确保播放指针流畅移动
+    const interval = setInterval(updateCurrentTime, 100);
+
+    return () => {
+      events.forEach(event => {
+        audio.removeEventListener(event, updateCurrentTime);
+      });
+      clearInterval(interval);
+    };
+  }, [audioUrl]);
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -367,15 +393,28 @@ export default function AnalysisDetail({ params }) {
     // Use pxPerSec as the single source of truth for mapping time<->pixels
     const secPerPx = 1 / currentPx;
     if (isZoom) {
-      const x = e.clientX - rect.left;
-      const frac = Math.max(0, Math.min(1, x / rect.width));
-      const pivotSec = (wrapper.scrollLeft + x) * secPerPx;
+      // 改进缩放逻辑：优先以当前播放位置为中心进行缩放
+      const audio = audioRef.current;
+      let pivotSec;
+      
+      if (audio && audio.currentTime > 0) {
+        // 如果音频正在播放，以当前播放位置为中心
+        pivotSec = audio.currentTime;
+      } else {
+        // 否则以鼠标位置为中心
+        const x = e.clientX - rect.left;
+        pivotSec = (wrapper.scrollLeft + x) * secPerPx;
+      }
+      
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
       const next = Math.max(minPx, Math.min(5000, currentPx * (1 / factor)));
       setPxPerSec(next);
       wsRef.current.zoom(next);
-      const newScrollLeft = Math.max(0, pivotSec * next - frac * rect.width);
+      
+      // 计算新的滚动位置，确保pivotSec在视图中居中
+      const newScrollLeft = Math.max(0, pivotSec * next - rect.width / 2);
       const maxScroll = Math.max(0, next * duration - rect.width);
+      
       // Apply after zoom paint to ensure alignment
       requestAnimationFrame(() => {
         wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
@@ -465,13 +504,26 @@ export default function AnalysisDetail({ params }) {
       } else {
         const scale = dist / pinchRef.current.startDist;
         const centerX = (t1.clientX + t2.clientX) / 2 - rect.left;
-        const frac = Math.max(0, Math.min(1, centerX / rect.width));
-        const pivotSec = (waveWrapRef.current.scrollLeft + centerX) / pxPerSec;
+        
+        // 改进触摸缩放逻辑：优先以当前播放位置为中心
+        const audio = audioRef.current;
+        let pivotSec;
+        
+        if (audio && audio.currentTime > 0) {
+          // 如果音频正在播放，以当前播放位置为中心
+          pivotSec = audio.currentTime;
+        } else {
+          // 否则以触摸中心为中心
+          pivotSec = (waveWrapRef.current.scrollLeft + centerX) / pxPerSec;
+        }
+        
         const minPx = duration > 0 ? (rect.width / duration) : 10;
         const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
         setPxPerSec(next);
         wsRef.current.zoom(next);
-        const newScrollLeft = Math.max(0, pivotSec * next - frac * rect.width);
+        
+        // 计算新的滚动位置，确保pivotSec在视图中居中
+        const newScrollLeft = Math.max(0, pivotSec * next - rect.width / 2);
         const maxScroll = Math.max(0, next * duration - rect.width);
         waveWrapRef.current.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
       }
@@ -517,10 +569,19 @@ export default function AnalysisDetail({ params }) {
           ctx.fillText(label + 's', x + 2, 12);
         }
       }
-      // Playhead marker
-      const a = audioRef.current; if (a) {
-        const playX = (Math.max(0, Math.min(duration || 0, a.currentTime)) - startSec) * pps;
-        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
+      // Playhead marker - 确保与波形图播放指针完全同步
+      const currentTime = Math.max(0, Math.min(duration || 0, audioCurrentTime));
+      // 使用与波形图完全相同的计算方式
+      const playX = (currentTime - startSec) * pps;
+      // 只有当播放指针在可见区域内时才绘制
+      if (playX >= -1 && playX <= w + 1) {
+        ctx.strokeStyle = '#ef4444'; 
+        ctx.lineWidth = 2;
+        ctx.beginPath(); 
+        ctx.moveTo(playX + 0.5, 0); 
+        ctx.lineTo(playX + 0.5, h); 
+        ctx.stroke();
+        ctx.lineWidth = 1; // 重置线宽
       }
       // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
@@ -534,7 +595,7 @@ export default function AnalysisDetail({ params }) {
     };
     raf = requestAnimationFrame(draw);
     return () => { running = false; if (raf) cancelAnimationFrame(raf); };
-  }, [pxPerSec, duration]);
+  }, [pxPerSec, duration, audioCurrentTime]);
 
   if (!token) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
@@ -570,6 +631,9 @@ export default function AnalysisDetail({ params }) {
       </div>
       {/* Sub-title: Waveform */}
       <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px' }}>{t('Waveform')}</div>
+      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
+        提示：使用鼠标滚轮缩放，拖拽平移，+/- 键快速缩放，0 键重置视图，空格键播放/暂停
+      </div>
       {meta && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
           <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
@@ -617,6 +681,54 @@ export default function AnalysisDetail({ params }) {
               e.preventDefault(); e.stopPropagation();
               const a = audioRef.current; if (!a) return;
               if (a.paused) { a.play?.(); } else { a.pause?.(); }
+            }
+            // 添加缩放快捷键
+            if (e.key === '+' || e.key === '=') {
+              e.preventDefault(); e.stopPropagation();
+              const wrapper = waveWrapRef.current; if (!wrapper || !wsRef.current || !duration) return;
+              const rect = wrapper.getBoundingClientRect();
+              const minPx = duration > 0 ? (rect.width / duration) : 10;
+              const currentPx = pxPerSec;
+              const next = Math.min(5000, currentPx * 1.2);
+              if (next !== currentPx) {
+                setPxPerSec(next);
+                wsRef.current.zoom(next);
+                // 以当前播放位置为中心缩放
+                const audio = audioRef.current;
+                if (audio && audio.currentTime > 0) {
+                  const newScrollLeft = Math.max(0, audio.currentTime * next - rect.width / 2);
+                  const maxScroll = Math.max(0, next * duration - rect.width);
+                  wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
+                }
+              }
+            }
+            if (e.key === '-') {
+              e.preventDefault(); e.stopPropagation();
+              const wrapper = waveWrapRef.current; if (!wrapper || !wsRef.current || !duration) return;
+              const rect = wrapper.getBoundingClientRect();
+              const minPx = duration > 0 ? (rect.width / duration) : 10;
+              const currentPx = pxPerSec;
+              const next = Math.max(minPx, currentPx / 1.2);
+              if (next !== currentPx) {
+                setPxPerSec(next);
+                wsRef.current.zoom(next);
+                // 以当前播放位置为中心缩放
+                const audio = audioRef.current;
+                if (audio && audio.currentTime > 0) {
+                  const newScrollLeft = Math.max(0, audio.currentTime * next - rect.width / 2);
+                  const maxScroll = Math.max(0, next * duration - rect.width);
+                  wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
+                }
+              }
+            }
+            if (e.key === '0') {
+              e.preventDefault(); e.stopPropagation();
+              const wrapper = waveWrapRef.current; if (!wrapper || !wsRef.current || !duration) return;
+              const rect = wrapper.getBoundingClientRect();
+              const minPx = duration > 0 ? (rect.width / duration) : 10;
+              setPxPerSec(minPx);
+              wsRef.current.zoom(minPx);
+              wrapper.scrollLeft = 0; // 重置到开始位置
             }
           }}
           tabIndex={0}

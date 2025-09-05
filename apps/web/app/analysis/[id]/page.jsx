@@ -69,6 +69,32 @@ export default function AnalysisDetail({ params }) {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatErr, setChatErr] = useState('');
 
+  // Load persisted chat history for this analysis record
+  useEffect(() => {
+    if (!token || !id) return;
+    (async () => {
+      try {
+        const r = await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok) return;
+        const rows = await r.json();
+        if (Array.isArray(rows)) setChatMsgs(rows.map(m => ({ role: m.role, content: m.content })));
+      } catch {}
+    })();
+  }, [token, id]);
+
+  // Also refresh chat history whenever the chat panel is opened
+  useEffect(() => {
+    if (!chatOpen || !token || !id) return;
+    (async () => {
+      try {
+        const r = await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!r.ok) return;
+        const rows = await r.json();
+        if (Array.isArray(rows)) setChatMsgs(rows.map(m => ({ role: m.role, content: m.content })));
+      } catch {}
+    })();
+  }, [chatOpen, token, id]);
+
   function buildChatContext(){
     const ctx = [];
     if (meta?.ai) {
@@ -92,6 +118,8 @@ export default function AnalysisDetail({ params }) {
       ...chatMsgs,
       { role:'user', content: userText }
     ];
+    // Persist user message immediately (best-effort)
+    try { await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'user', content: userText }) }); } catch {}
     setChatMsgs(cur => cur.concat([{ role:'user', content:userText }, { role:'assistant', content:'' }]));
     try {
       // Try streaming first (user explicitly wants real-time output)
@@ -107,9 +135,12 @@ export default function AnalysisDetail({ params }) {
         if (!resp2.ok || j2?.error) throw new Error(j2?.error || 'chat failed');
         const text = j2?.text || '';
         setChatMsgs(cur => { const c = cur.slice(); const last=c[c.length-1]; if (last && last.role==='assistant') last.content = text; return c; });
+        // Persist assistant reply
+        try { if (text && text.trim()) await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: text }) }); } catch {}
         return;
       }
       const reader = resp.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      let assistantAccum = '';
       while (true) {
         const { value, done } = await reader.read(); if (done) break;
         buffer += decoder.decode(value, { stream: true }); let idx;
@@ -130,7 +161,7 @@ export default function AnalysisDetail({ params }) {
                   let k = Math.min(prev.length, piece.length);
                   while (k > 0 && !prev.endsWith(piece.slice(0, k))) k--;
                   const toAppend = piece.slice(k);
-                  if (toAppend) last.content = prev + toAppend;
+                  if (toAppend) { assistantAccum += toAppend; last.content = prev + toAppend; }
                 }
                 return c;
               });
@@ -139,6 +170,8 @@ export default function AnalysisDetail({ params }) {
           } catch {}
         }
       }
+      // persist streamed reply
+      try { if (assistantAccum && assistantAccum.trim()) await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: assistantAccum }) }); } catch {}
     } catch(e){
       const msg = e?.message || 'chat failed';
       setChatErr(msg);
@@ -891,7 +924,16 @@ export default function AnalysisDetail({ params }) {
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
             {chatMsgs.length===0 && (
-              <div style={{ color:'#64748b', fontSize:13 }}>{lang==='zh' ? '基于左侧 AI 分析进行追问或咨询。' : 'Ask follow-ups based on the AI analysis on the left.'}</div>
+              <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+                <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
+                <div style={{ maxWidth: 280, background:'#f1f5f9', color:'#0f172a', padding:'8px 10px', borderRadius:12, lineHeight:1.5 }}>
+                  <div style={{ whiteSpace:'pre-wrap' }}>
+                    {lang==='zh'
+                      ? '你好，我是智能心音助手。\n我可以基于本次分析结果，帮你解读报告、回答疑问，或给出复测与就医建议。\n请告诉我你的具体问题。'
+                      : "Hi! I'm your heart-sound assistant.\nI can interpret this analysis, answer questions, and suggest retesting or when to see a doctor.\nWhat would you like to know?"}
+                  </div>
+                </div>
+              </div>
             )}
             {chatMsgs.map((m, idx) => {
               const isUser = m.role==='user';

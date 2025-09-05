@@ -33,6 +33,17 @@ async function init() {
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS spec_media_id UUID;
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai JSONB;
     ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai_generated_at TIMESTAMPTZ;
+    -- Chat messages per analysis record
+    CREATE TABLE IF NOT EXISTS analysis_chat_messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      record_id UUID NOT NULL,
+      user_id UUID NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_record ON analysis_chat_messages(record_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_user ON analysis_chat_messages(user_id);
   `);
 }
 
@@ -313,5 +324,49 @@ app.post('/records/:id/ai_start', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(400).json({ error: 'ai start failed' });
+  }
+});
+
+// List chat messages for a record (owned by user)
+app.get('/records/:id/chat', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    // Ensure ownership
+    const rec = await pool.query('SELECT id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+    if (!rec.rowCount) return res.status(404).json({ error: 'not found' });
+    const { rows } = await pool.query(
+      'SELECT id, role, content, created_at FROM analysis_chat_messages WHERE record_id=$1 AND user_id=$2 ORDER BY created_at ASC',
+      [req.params.id, userId]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'chat list failed' });
+  }
+});
+
+// Append a chat message for a record
+app.post('/records/:id/chat', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    const { role, content } = req.body || {};
+    if (!role || !content || (role !== 'user' && role !== 'assistant')) {
+      return res.status(400).json({ error: 'role and content required' });
+    }
+    // Ensure ownership
+    const rec = await pool.query('SELECT id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+    if (!rec.rowCount) return res.status(404).json({ error: 'not found' });
+    const { rows } = await pool.query(
+      'INSERT INTO analysis_chat_messages (record_id, user_id, role, content) VALUES ($1,$2,$3,$4) RETURNING id, role, content, created_at',
+      [req.params.id, userId, role, content]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'chat append failed' });
   }
 });

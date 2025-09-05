@@ -56,6 +56,7 @@ export default function AnalysisDetail({ params }) {
   const prevVolRef = useRef(1);
   const [waveFocused, setWaveFocused] = useState(false);
   const [navOffset, setNavOffset] = useState(96);
+  const [currentPlayTime, setCurrentPlayTime] = useState(0);
   useEffect(() => {
     try {
       const nav = document.querySelector('nav');
@@ -544,6 +545,24 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => () => { disableGainPipeline(); }, []);
 
+  // Track current play time for smart zoom centering
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    const updatePlayTime = () => setCurrentPlayTime(audio.currentTime || 0);
+    const handleTimeUpdate = () => updatePlayTime();
+    const handleSeeked = () => updatePlayTime();
+    
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('seeked', handleSeeked);
+    
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('seeked', handleSeeked);
+    };
+  }, [audioUrl]);
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -576,6 +595,28 @@ export default function AnalysisDetail({ params }) {
       wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, current));
     }
   }, [duration, pxPerSec]);
+
+  // Smart zoom function that centers on current play position
+  const smartZoom = useCallback((factor) => {
+    if (!waveWrapRef.current || !wsRef.current || !duration) return;
+    const wrapper = waveWrapRef.current;
+    const rect = wrapper.getBoundingClientRect();
+    const currentPx = pxPerSec;
+    const minPx = duration > 0 ? (rect.width / duration) : 10;
+    const next = Math.max(minPx, Math.min(5000, currentPx * factor));
+    
+    // Center zoom on current play time
+    const playTime = currentPlayTime;
+    const newScrollLeft = Math.max(0, playTime * next - rect.width / 2);
+    const maxScroll = Math.max(0, next * duration - rect.width);
+    
+    setPxPerSec(next);
+    wsRef.current.zoom(next);
+    
+    requestAnimationFrame(() => {
+      wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
+    });
+  }, [duration, pxPerSec, currentPlayTime]);
 
   useEffect(() => {
     const el = waveWrapRef.current; if (!el) return;
@@ -615,6 +656,18 @@ export default function AnalysisDetail({ params }) {
       if (audioRef.current) audioRef.current.currentTime = sec;
     }
     isDraggingRef.current = false;
+  }
+
+  // Double-click to center on play position
+  function onDoubleClick(e){
+    if (!waveWrapRef.current || !wsRef.current || !duration) return;
+    e.preventDefault();
+    const wrapper = waveWrapRef.current;
+    const rect = wrapper.getBoundingClientRect();
+    const playTime = currentPlayTime;
+    const newScrollLeft = Math.max(0, playTime * pxPerSec - rect.width / 2);
+    const maxScroll = Math.max(0, pxPerSec * duration - rect.width);
+    wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
   }
 
   // Pinch zoom with two pointers
@@ -707,10 +760,20 @@ export default function AnalysisDetail({ params }) {
           ctx.fillText(label + 's', x + 2, 12);
         }
       }
-      // Playhead marker
+      // Playhead marker - ensure strict synchronization with waveform
       const a = audioRef.current; if (a) {
-        const playX = (Math.max(0, Math.min(duration || 0, a.currentTime)) - startSec) * pps;
-        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
+        const currentTime = Math.max(0, Math.min(duration || 0, a.currentTime || 0));
+        const playX = (currentTime - startSec) * pps;
+        // Only draw playhead if it's within the visible range
+        if (playX >= -1 && playX <= w + 1) {
+          ctx.strokeStyle = '#ef4444'; 
+          ctx.lineWidth = 2;
+          ctx.beginPath(); 
+          ctx.moveTo(playX + 0.5, 0); 
+          ctx.lineTo(playX + 0.5, h); 
+          ctx.stroke();
+          ctx.lineWidth = 1; // reset line width
+        }
       }
       // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
@@ -724,7 +787,7 @@ export default function AnalysisDetail({ params }) {
     };
     raf = requestAnimationFrame(draw);
     return () => { running = false; if (raf) cancelAnimationFrame(raf); };
-  }, [pxPerSec, duration]);
+  }, [pxPerSec, duration, currentPlayTime]);
 
   if (!token) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
@@ -769,6 +832,37 @@ export default function AnalysisDetail({ params }) {
       </div>
       {/* Sub-title: Waveform */}
       <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px' }}>{t('Waveform')}</div>
+      
+      {/* Zoom controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <button 
+          onClick={() => smartZoom(0.5)} 
+          className="vh-btn vh-btn-outline" 
+          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 6 }}
+          title="Zoom out (center on play position)"
+        >
+          🔍−
+        </button>
+        <button 
+          onClick={() => smartZoom(2)} 
+          className="vh-btn vh-btn-outline" 
+          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 6 }}
+          title="Zoom in (center on play position)"
+        >
+          🔍+
+        </button>
+        <button 
+          onClick={onDoubleClick} 
+          className="vh-btn vh-btn-outline" 
+          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 6 }}
+          title="Center on play position (double-click waveform)"
+        >
+          🎯 Center
+        </button>
+        <span style={{ fontSize: 12, color: '#64748b', marginLeft: 4 }}>
+          {pxPerSec.toFixed(0)} px/s
+        </span>
+      </div>
       {meta && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
           <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
@@ -808,6 +902,7 @@ export default function AnalysisDetail({ params }) {
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
+          onDoubleClick={onDoubleClick}
           onFocus={()=>setWaveFocused(true)}
           onBlur={()=>setWaveFocused(false)}
           onKeyDown={(e)=>{

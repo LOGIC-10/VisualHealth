@@ -1,6 +1,6 @@
 {
-  "/analysis/page": "app/analysis/page.js",
   "/community/page": "app/community/page.js",
+  "/analysis/page": "app/analysis/page.js",
   "/analysis/[id]/page": "app/analysis/[id]/page.js",
   "/page": "app/page.js"
 }

@@ -4,16 +4,18 @@ import { useI18n } from './i18n';
 
 const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
 
-export default function Nav() {
+export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
   const { t } = useI18n();
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState('light'); // 'light' | 'dark'
-  const [lang, setLang] = useState('en'); // 'en' | 'zh'
+  const [theme, setTheme] = useState(initialTheme); // 'light' | 'dark'
+  const [lang, setLang] = useState(initialLang); // 'en' | 'zh'
+  const [mounted, setMounted] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
+    setMounted(true);
     const t = localStorage.getItem('vh_token');
     setToken(t);
     if (!t) return;
@@ -29,22 +31,14 @@ export default function Nav() {
     return () => document.removeEventListener('click', onDoc);
   }, []);
 
-  // init theme/lang from storage
-  useEffect(() => {
-    const th = localStorage.getItem('vh_theme');
-    const lg = localStorage.getItem('vh_lang');
-    if (th === 'dark' || th === 'light') setTheme(th);
-    if (lg === 'zh' || lg === 'en') setLang(lg);
-  }, []);
-
-  // apply theme/lang to document
+  // apply theme/lang to document + cookies
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-theme', theme);
       document.documentElement.setAttribute('data-lang', lang);
     }
-    try { localStorage.setItem('vh_theme', theme); } catch {}
-    try { localStorage.setItem('vh_lang', lang); } catch {}
+    try { document.cookie = `vh_theme=${theme}; path=/; samesite=lax; max-age=${60*60*24*365}`; } catch {}
+    try { document.cookie = `vh_lang=${lang}; path=/; samesite=lax; max-age=${60*60*24*365}`; } catch {}
     try { window.dispatchEvent(new CustomEvent('vh_lang_change', { detail: lang })); } catch {}
   }, [theme, lang]);
 
@@ -77,10 +71,9 @@ export default function Nav() {
           style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:isDark?'#0f172a':'#fff', color:isDark?'#111':'#111', cursor:'pointer' }}>
           {isDark ? '☀️' : '🌙'}
         </button>
-        {!token && (
+        {!mounted || !token ? (
           <a href="/auth" style={{ textDecoration:'none', padding:'8px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:isDark?'#111827':'#fff', color:isDark?'#e2e8f0':'#111' }}>{T('Login')}</a>
-        )}
-        {token && (
+        ) : (
           <div ref={menuRef} style={{ position:'relative' }}>
             <button onClick={() => setOpen(v=>!v)} style={{ display:'flex', alignItems:'center', gap:8, background:'transparent', border:'none', cursor:'pointer' }}>
               <div style={{ width:32, height:32, borderRadius:'9999px', background:isDark?'#e2e8f0':'#111', color:isDark?'#0f172a':'#fff', display:'grid', placeItems:'center', fontSize:14 }}>{initials}</div>

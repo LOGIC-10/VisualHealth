@@ -68,6 +68,9 @@ export default function AnalysisDetail({ params }) {
   const [chatMsgs, setChatMsgs] = useState([]); // [{role:'user'|'assistant', content:string}]
   const [chatBusy, setChatBusy] = useState(false);
   const [chatErr, setChatErr] = useState('');
+  const chatAbortRef = useRef(null);
+  const assistantAccumRef = useRef('');
+  const chatScrollRef = useRef(null);
 
   // Load persisted chat history for this analysis record
   useEffect(() => {
@@ -121,16 +124,20 @@ export default function AnalysisDetail({ params }) {
     // Persist user message immediately (best-effort)
     try { await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'user', content: userText }) }); } catch {}
     setChatMsgs(cur => cur.concat([{ role:'user', content:userText }, { role:'assistant', content:'' }]));
+    // Setup abort controller and accum buffer for streaming
+    assistantAccumRef.current = '';
+    chatAbortRef.current = new AbortController();
     try {
       // Try streaming first (user explicitly wants real-time output)
       const resp = await fetch(LLM_BASE + '/chat_sse', {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Accept':'text/event-stream' },
-        body: JSON.stringify({ messages, temperature: 0.2 })
+        body: JSON.stringify({ messages, temperature: 0.2 }),
+        signal: chatAbortRef.current.signal
       });
       if (!resp.ok || !resp.body) {
         // Fallback to non-streaming endpoint
-        const resp2 = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }) });
+        const resp2 = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }), signal: chatAbortRef.current.signal });
         const j2 = await resp2.json().catch(()=>({}));
         if (!resp2.ok || j2?.error) throw new Error(j2?.error || 'chat failed');
         const text = j2?.text || '';
@@ -161,7 +168,7 @@ export default function AnalysisDetail({ params }) {
                   let k = Math.min(prev.length, piece.length);
                   while (k > 0 && !prev.endsWith(piece.slice(0, k))) k--;
                   const toAppend = piece.slice(k);
-                  if (toAppend) { assistantAccum += toAppend; last.content = prev + toAppend; }
+                  if (toAppend) { assistantAccum += toAppend; assistantAccumRef.current += toAppend; last.content = prev + toAppend; }
                 }
                 return c;
               });
@@ -173,19 +180,49 @@ export default function AnalysisDetail({ params }) {
       // persist streamed reply
       try { if (assistantAccum && assistantAccum.trim()) await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: assistantAccum }) }); } catch {}
     } catch(e){
-      const msg = e?.message || 'chat failed';
-      setChatErr(msg);
-      // Fill last assistant bubble with error text if empty
-      setChatMsgs(cur => {
-        const c = cur.slice();
-        const last = c[c.length-1];
-        if (last && last.role==='assistant' && !last.content) last.content = msg;
-        return c;
-      });
+      const isAbort = e?.name === 'AbortError' || /aborted|AbortError/i.test(e?.message || '');
+      if (isAbort) {
+        // On cancel: persist any partial text; if none, remove empty assistant bubble
+        try {
+          const partial = assistantAccumRef.current || '';
+          if (partial.trim()) {
+            await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: partial }) });
+          } else {
+            setChatMsgs(cur => {
+              const c = cur.slice();
+              const last = c[c.length-1];
+              if (last && last.role==='assistant' && !last.content) c.pop();
+              return c;
+            });
+          }
+        } catch {}
+      } else {
+        const msg = e?.message || 'chat failed';
+        setChatErr(msg);
+        // Fill last assistant bubble with error text if empty
+        setChatMsgs(cur => {
+          const c = cur.slice();
+          const last = c[c.length-1];
+          if (last && last.role==='assistant' && !last.content) last.content = msg;
+          return c;
+        });
+      }
     } finally {
       setChatBusy(false);
+      chatAbortRef.current = null;
     }
   }
+
+  function cancelChat(){
+    try { chatAbortRef.current?.abort(); } catch {}
+  }
+
+  // Auto-scroll to the latest message/content
+  useEffect(() => {
+    const el = chatScrollRef.current; if (!el) return;
+    // smooth but snappy; always scroll to bottom on updates
+    requestAnimationFrame(() => { try { el.scrollTop = el.scrollHeight; } catch {} });
+  }, [chatMsgs, chatBusy, chatOpen]);
 
   useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
 
@@ -922,7 +959,7 @@ export default function AnalysisDetail({ params }) {
             <div style={{ fontWeight:600 }}>{t('AIConversation')}</div>
             <button onClick={()=> setChatOpen(false)} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#64748b' }}>✕</button>
           </div>
-          <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+          <div ref={chatScrollRef} style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
             {chatMsgs.length===0 && (
               <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
                 <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
@@ -962,9 +999,15 @@ export default function AnalysisDetail({ params }) {
             })}
           </div>
           <div style={{ padding:12, borderTop:'1px solid #e5e7eb' }}>
-            <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8 }}>
+            <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v || chatBusy) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8 }}>
               <input name="msg" placeholder={t('TypeMessage')} autoComplete="off" style={{ flex:1, padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
-              <button type="submit" disabled={chatBusy} style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor:'pointer' }}>{t('Send')}</button>
+              {!chatBusy ? (
+                <button type="submit" style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor:'pointer' }}>{t('Send')}</button>
+              ) : (
+                <button type="button" onClick={cancelChat} style={{ padding:'8px 12px', borderRadius:8, background:'#60a5fa', color:'#fff', cursor:'pointer' }} title={lang==='zh' ? '终止生成' : 'Stop generation'}>
+                  {lang==='zh' ? '■ 终止' : '■ Stop'}
+                </button>
+              )}
             </form>
             {chatErr && <div style={{ marginTop:6, color:'#b91c1c', fontSize:12 }}>{chatErr}</div>}
           </div>

@@ -62,8 +62,8 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
         {/* Lang toggle */}
-        <button onClick={()=>setLang(l=> l==='en'?'zh':'en')} title={lang==='en'?'中文':'English'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
-          {lang==='en' ? 'EN' : '中文'}
+        <button onClick={()=>setLang(l=> l==='en'?'zh':'en')} title={lang==='en'?'切换到中文':'Switch to English'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
+          {lang==='en' ? '中文' : 'EN'}
         </button>
         {/* Theme toggle */}
         <button onClick={()=>setTheme(t=> t==='dark'?'light':'dark')} title={isDark?'Switch to Light':'切换夜间模式'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>

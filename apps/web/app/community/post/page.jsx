@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
@@ -81,7 +82,7 @@ export default function CreatePostPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" className="vh-nav-link" style={{ textDecoration:'none' }}>{t('Back')}</a>
+      <Link href="/community" className="vh-nav-link" style={{ textDecoration:'none' }}>{t('Back')}</Link>
       <h1 style={{ fontSize: 24, margin: '12px 0' }}>{t('CreatePostTitle')}</h1>
       <div style={{ display: 'grid', gap: 12 }}>
         <textarea placeholder={t('ShareStory')} value={content} onChange={e => setContent(e.target.value)} style={{ padding: 12, borderRadius: 8, border: '1px solid #e5e7eb', minHeight: 120 }} />

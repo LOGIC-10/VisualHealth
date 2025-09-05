@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
@@ -45,6 +46,17 @@ export default function PostDetail({ params }) {
     const t = localStorage.getItem('vh_token'); setToken(t);
     if (t) fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${t}` } }).then(r=>r.json()).then(u=>{ if(!u?.error) setMe(u); }).catch(()=>{});
   }, [id]);
+
+  // Update UI authors immediately when profile changes (without refetch)
+  useEffect(() => {
+    function onUserChange(ev){
+      const u = ev?.detail; if (!u || !u.id) return;
+      setPost(p => p && p.user_id===u.id ? { ...p, author_display_name: u.display_name || u.email || p.author_display_name || p.author_name || p.author_email, author_avatar_media_id: u.avatar_media_id || null, author_email: u.email || p.author_email } : p);
+      setComments(cs => cs.map(c => c.user_id===u.id ? { ...c, author_display_name: u.display_name || u.email || c.author_display_name || c.author_name || c.author_email, author_avatar_media_id: u.avatar_media_id || null, author_email: u.email || c.author_email } : c));
+    }
+    window.addEventListener('vh_user_change', onUserChange);
+    return () => window.removeEventListener('vh_user_change', onUserChange);
+  }, []);
 
   useEffect(() => {
     // Load post when token state resolved
@@ -172,7 +184,7 @@ export default function PostDetail({ params }) {
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>{t('Back')}</a>
+      <Link href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>{t('Back')}</Link>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
         {!editing && <h1 style={{ fontSize: 24, margin: '12px 0' }}>{post.content}</h1>}
         {editing && (
@@ -212,7 +224,17 @@ export default function PostDetail({ params }) {
           </div>
         </div>
       )}
-      <div style={{ marginTop: 8, color: '#64748b', display:'flex', alignItems:'center', gap:12 }}>
+      <div style={{ marginTop: 8, color: '#64748b', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <div style={{ display:'inline-flex', alignItems:'center', gap:8 }}>
+          {post.author_avatar_media_id ? (
+            <img src={`${MEDIA_BASE}/file/${post.author_avatar_media_id}?v=${post.author_avatar_media_id}`} alt="author" width={20} height={20} style={{ width:20, height:20, borderRadius:'50%', objectFit:'cover', display:'block' }} />
+          ) : (
+            <div title={post.author_display_name || post.author_name || post.author_email} style={{ width:20, height:20, borderRadius:'50%', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:11 }}>
+              {(post.author_display_name || post.author_name || post.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
+            </div>
+          )}
+          <div style={{ fontSize:12, color:'#64748b' }}>{post.author_display_name || post.author_name || post.author_email || 'User'}</div>
+        </div>
         <span style={{ color:'#94a3b8', fontSize:12 }}>· {formatRelativeTime(post.created_at)}</span>
         <button onClick={toggleLike} disabled={!token} title={post.liked_by_me ? '取消点赞' : '点赞'} style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:9999, border:'1px solid #e5e7eb', background: post.liked_by_me ? '#fee2e2' : '#fff', color:'#b91c1c', cursor: token ? 'pointer':'not-allowed' }}>
           <span>{post.liked_by_me ? '❤️' : '♡'}</span>
@@ -301,7 +323,7 @@ function CommentItem({ c, depth=0, onReply, replyingId, replyText, setReplyText,
   const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
   const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
   const [visible, setVisible] = useState(0);
-  const displayName = (cc) => (cc.author_name || cc.author_email || 'User');
+  const displayName = (cc) => (cc.author_display_name || cc.author_name || cc.author_email || 'User');
   const targetName = (cc) => {
     const p = cc.parent_id ? commentMap?.get?.(cc.parent_id) : null;
     return p ? displayName(p) : null;
@@ -334,9 +356,13 @@ function CommentItem({ c, depth=0, onReply, replyingId, replyText, setReplyText,
   return (
     <div style={{ border: depth===0 ? '1px solid #e5e7eb' : 'none', borderRadius: depth===0 ? 12 : 0, padding:12, marginLeft: indentPx }}>
       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-        <div title={c.author_name || c.author_email} style={{ width:28, height:28, borderRadius:'9999px', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
-          {(c.author_name || c.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
-        </div>
+        {c.author_avatar_media_id ? (
+          <img src={`${MEDIA_BASE}/file/${c.author_avatar_media_id}?v=${c.author_avatar_media_id}`} alt="author" width={28} height={28} style={{ width:28, height:28, borderRadius:'9999px', objectFit:'cover', display:'block' }} />
+        ) : (
+          <div title={c.author_display_name || c.author_name || c.author_email} style={{ width:28, height:28, borderRadius:'9999px', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
+            {(c.author_display_name || c.author_name || c.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
+          </div>
+        )}
         {depth>0 && <span style={{ color:'#94a3b8' }}>↪︎</span>}
         <div style={{ fontWeight:600, color:'#0f172a' }}>{displayName(c)}</div>
         {depth>0 && targetName(c) && (

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../../components/i18n';
 
 const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
@@ -23,6 +24,16 @@ export default function CommunityPage() {
   useEffect(() => {
     if (token !== null) load(token || undefined);
   }, [token]);
+
+  // Update post authors immediately when profile changes (without refetch)
+  useEffect(() => {
+    function onUserChange(ev){
+      const u = ev?.detail; if (!u || !u.id) return;
+      setPosts(ps => ps.map(p => p.user_id===u.id ? { ...p, author_display_name: u.display_name || u.email || p.author_display_name || p.author_name || p.author_email, author_avatar_media_id: u.avatar_media_id || null, author_email: u.email || p.author_email } : p));
+    }
+    window.addEventListener('vh_user_change', onUserChange);
+    return () => window.removeEventListener('vh_user_change', onUserChange);
+  }, []);
 
   function parseMediaIds(m) {
     if (Array.isArray(m)) return m;
@@ -63,9 +74,9 @@ export default function CommunityPage() {
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('CommunityTitle')}</h1>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
         {token ? (
-          <a href="/community/post" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('NewPost')}</a>
+          <Link href="/community/post" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('NewPost')}</Link>
         ) : (
-          <a href="/auth" className="vh-btn vh-btn-outline" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('LoginToPost')}</a>
+          <Link href="/auth" className="vh-btn vh-btn-outline" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('LoginToPost')}</Link>
         )}
       </div>
 
@@ -74,7 +85,7 @@ export default function CommunityPage() {
           const mids = parseMediaIds(p.media_ids);
           const cover = (mids && mids.length) ? `${MEDIA_BASE}/file/${mids[0]}` : null;
           return (
-            <a key={p.id} href={`/community/${p.id}`} style={{ textDecoration: 'none', color: 'inherit', display:'block' }}>
+            <Link key={p.id} href={`/community/${p.id}`} style={{ textDecoration: 'none', color: 'inherit', display:'block' }}>
               <div style={{ border: '1px solid #e5e7eb', borderRadius: 16, overflow: 'hidden', background: '#fff', display:'flex', flexDirection:'column' }}>
                 {/* Fixed-ratio media area (16:9) */}
                 <div style={{ position:'relative', width:'100%', paddingTop: '56.25%', background:'#f1f5f9' }}>
@@ -99,17 +110,21 @@ export default function CommunityPage() {
                     <span>💬 {p.comments}</span>
                     <span style={{ color:'#94a3b8', fontSize:12 }}>· {formatRelativeTime(p.created_at)}</span>
                     <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
-                      <div title={p.author_name || p.author_email} style={{ width:20, height:20, borderRadius:'50%', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:11 }}>
-                        {(p.author_name || p.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
-                      </div>
+                      {p.author_avatar_media_id ? (
+                        <img src={`${MEDIA_BASE}/file/${p.author_avatar_media_id}?v=${p.author_avatar_media_id}`} alt="author" width={20} height={20} style={{ width:20, height:20, borderRadius:'50%', objectFit:'cover', display:'block' }} />
+                      ) : (
+                        <div title={p.author_display_name || p.author_name || p.author_email} style={{ width:20, height:20, borderRadius:'50%', background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:11 }}>
+                          {(p.author_display_name || p.author_name || p.author_email || 'U').trim()[0]?.toUpperCase?.() || 'U'}
+                        </div>
+                      )}
                       <div style={{ fontSize:12, color:'#64748b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'10em' }}>
-                        {p.author_name || p.author_email || 'User'}
+                        {p.author_display_name || p.author_name || p.author_email || 'User'}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </a>
+            </Link>
           );
         })}
       </div>

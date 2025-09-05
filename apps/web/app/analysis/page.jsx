@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../../components/i18n';
 
 const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
@@ -295,7 +296,7 @@ export default function AnalysisListPage() {
       <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
         <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('AnalysisTitle')}</h1>
         <p>{t('LoginToView')}</p>
-        <a href="/auth" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('Login')}</a>
+        <Link href="/auth" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('Login')}</Link>
       </div>
     );
   }

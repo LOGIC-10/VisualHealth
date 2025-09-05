@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../components/i18n';
 import { renderMarkdown } from '../components/markdown';
 import WaveSurfer from 'wavesurfer.js';
@@ -191,7 +192,7 @@ export default function HomePage() {
           <p style={{ fontSize: 20, marginTop: 16 }}>{t('HomeHeroDesc')}</p>
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
             <button onClick={openGuide} className="vh-btn vh-btn-primary" style={{ padding:'12px 16px', borderRadius:12 }}>{t('GetStarted')}</button>
-            <a href="/community" style={{ padding: '12px 16px', background: '#e5e7eb', color: '#111', borderRadius: 12, textDecoration: 'none' }}>{t('ExploreCommunity')}</a>
+            <Link href="/community" style={{ padding: '12px 16px', background: '#e5e7eb', color: '#111', borderRadius: 12, textDecoration: 'none' }}>{t('ExploreCommunity')}</Link>
           </div>
         </div>
       </section>
@@ -237,7 +238,7 @@ export default function HomePage() {
               </div>
               <div style={{ marginTop:16, display:'flex', gap:12 }}>
                 <button onClick={openGuide} className="vh-btn vh-btn-primary" style={{ padding:'12px 16px', borderRadius:12 }}>{t('GetStarted')}</button>
-                <a href="/analysis" style={{ padding:'12px 16px', borderRadius:12, background:'#e5e7eb', color:'#111', textDecoration:'none' }}>{t('Analysis')}</a>
+                <Link href="/analysis" style={{ padding:'12px 16px', borderRadius:12, background:'#e5e7eb', color:'#111', textDecoration:'none' }}>{t('Analysis')}</Link>
               </div>
             </div>
             <div>

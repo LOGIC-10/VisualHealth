@@ -13,13 +13,24 @@ const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function init() {
-  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    display_name TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-  );`);
+  await pool.query(`
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      display_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    -- Progressive schema upgrades
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS height_cm SMALLINT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_kg REAL;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_media_id UUID;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_display_name_change_at TIMESTAMPTZ;
+  `);
 }
 
 function signToken(user) {
@@ -75,9 +86,19 @@ app.get('/me', async (req, res) => {
     if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'missing token' });
     const token = auth.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
-    const { rows } = await pool.query('SELECT id, email, display_name FROM users WHERE id=$1', [payload.sub]);
+    const { rows } = await pool.query(
+      `SELECT id, email, display_name, phone, birth_date, gender, height_cm, weight_kg, avatar_media_id, last_display_name_change_at
+       FROM users WHERE id=$1`,
+      [payload.sub]
+    );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
-    res.json(rows[0]);
+    const u = rows[0];
+    // Provide client hint for next allowed display_name change (30 days window)
+    let next_allowed_display_name_change_at = null;
+    if (u.last_display_name_change_at) {
+      next_allowed_display_name_change_at = new Date(new Date(u.last_display_name_change_at).getTime() + 30*24*3600*1000).toISOString();
+    }
+    res.json({ ...u, next_allowed_display_name_change_at });
   } catch (e) {
     res.status(401).json({ error: 'invalid token' });
   }
@@ -89,11 +110,79 @@ app.patch('/me', async (req, res) => {
     if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'missing token' });
     const token = auth.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
-    const { displayName } = req.body || {};
-    const { rows } = await pool.query('UPDATE users SET display_name=$1 WHERE id=$2 RETURNING id, email, display_name', [displayName || null, payload.sub]);
-    res.json(rows[0]);
+    const { displayName, phone, birthDate, gender, heightCm, weightKg, avatarMediaId } = req.body || {};
+
+    // Load current to compare and handle cooldown only when actual change requested
+    const cur = await pool.query('SELECT display_name, last_display_name_change_at FROM users WHERE id=$1', [payload.sub]);
+    const currentDisplay = cur.rows[0]?.display_name ?? null;
+    const last = cur.rows[0]?.last_display_name_change_at ?? null;
+
+    // Normalize proposed display name
+    let proposedDisplay = (typeof displayName !== 'undefined' && displayName !== null)
+      ? String(displayName).trim()
+      : null;
+
+    // If provided but effectively identical, ignore to avoid triggering cooldown
+    if (proposedDisplay !== null && proposedDisplay === (currentDisplay ?? '')) {
+      proposedDisplay = null;
+    }
+
+    // Enforce cooldown only when a real change is requested
+    if (proposedDisplay !== null && last) {
+      const next = new Date(new Date(last).getTime() + 30*24*3600*1000);
+      if (new Date() < next) {
+        return res.status(429).json({ error: 'display name recently changed', nextAllowedAt: next.toISOString() });
+      }
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE users SET
+        display_name = COALESCE($1, display_name),
+        phone = COALESCE($2, phone),
+        birth_date = COALESCE($3, birth_date),
+        gender = COALESCE($4, gender),
+        height_cm = COALESCE($5, height_cm),
+        weight_kg = COALESCE($6, weight_kg),
+        avatar_media_id = COALESCE($7, avatar_media_id),
+        last_display_name_change_at = CASE WHEN $1 IS NOT NULL AND $1 <> display_name THEN now() ELSE last_display_name_change_at END
+       WHERE id=$8
+       RETURNING id, email, display_name, phone, birth_date, gender, height_cm, weight_kg, avatar_media_id, last_display_name_change_at`,
+      [
+        proposedDisplay,
+        phone ?? null,
+        birthDate ?? null,
+        gender ?? null,
+        (typeof heightCm === 'number' ? Math.max(0, Math.min(300, Math.round(heightCm))) : null),
+        (typeof weightKg === 'number' ? Math.max(0, Math.min(500, Number(weightKg))) : null),
+        avatarMediaId ?? null,
+        payload.sub,
+      ]
+    );
+    const u = rows[0];
+    let next_allowed_display_name_change_at = null;
+    if (u.last_display_name_change_at) next_allowed_display_name_change_at = new Date(new Date(u.last_display_name_change_at).getTime() + 30*24*3600*1000).toISOString();
+    res.json({ ...u, next_allowed_display_name_change_at });
   } catch (e) {
     res.status(400).json({ error: 'update failed' });
+  }
+});
+
+// Bulk public user info lookup: returns minimal public profile fields
+// Input: { ids: [uuid, ...] }
+// Output: { users: [{ id, email, display_name, avatar_media_id }] }
+app.post('/users/bulk', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? Array.from(new Set(req.body.ids)).filter(Boolean) : [];
+    if (!ids.length) return res.json({ users: [] });
+    // Limit to reasonable size to protect service
+    if (ids.length > 200) return res.status(400).json({ error: 'too many ids' });
+    const { rows } = await pool.query(
+      `SELECT id, email, display_name, avatar_media_id FROM users WHERE id = ANY($1::uuid[])`,
+      [ids]
+    );
+    res.json({ users: rows });
+  } catch (e) {
+    res.status(400).json({ error: 'bulk lookup failed' });
   }
 });
 

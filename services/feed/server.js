@@ -145,6 +145,25 @@ app.get('/posts', async (req, res) => {
       (SELECT count(*)::int FROM comments c WHERE c.post_id=p.id) AS comments,
       ${currentUser ? `(SELECT EXISTS(SELECT 1 FROM likes l2 WHERE l2.post_id=p.id AND l2.user_id='${currentUser}')) AS liked_by_me` : `false AS liked_by_me`}
     FROM posts p ORDER BY created_at DESC LIMIT 100`);
+  // Enrich author info from auth-service to ensure single source of truth
+  try {
+    const ids = Array.from(new Set(rows.map(r => r.user_id))).filter(Boolean);
+    if (ids.length) {
+      const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids }) });
+      if (resp.ok) {
+        const j = await resp.json();
+        const map = new Map((j?.users || []).map(u => [u.id, u]));
+        for (const r of rows) {
+          const u = map.get(r.user_id);
+          if (u) {
+            r.author_display_name = u.display_name || u.email || r.author_name || r.author_email || null;
+            r.author_avatar_media_id = u.avatar_media_id || null;
+            r.author_email = u.email || r.author_email || null;
+          }
+        }
+      }
+    }
+  } catch {}
   res.json(rows);
 });
 
@@ -160,7 +179,21 @@ app.get('/posts/:id', async (req, res) => {
       ${currentUser ? `(SELECT EXISTS(SELECT 1 FROM likes l2 WHERE l2.post_id=p.id AND l2.user_id='${currentUser}')) AS liked_by_me` : `false AS liked_by_me`}
     FROM posts p WHERE p.id=$1 LIMIT 1`, [req.params.id]);
   if (!rows.length) return res.status(404).json({ error: 'not found' });
-  res.json(rows[0]);
+  const row = rows[0];
+  // Enrich author info
+  try {
+    const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids: [row.user_id] }) });
+    if (resp.ok) {
+      const j = await resp.json();
+      const u = (j?.users || [])[0];
+      if (u) {
+        row.author_display_name = u.display_name || u.email || row.author_name || row.author_email || null;
+        row.author_avatar_media_id = u.avatar_media_id || null;
+        row.author_email = u.email || row.author_email || null;
+      }
+    }
+  } catch {}
+  res.json(row);
 });
 
 app.post('/posts/:id/like', async (req, res) => {
@@ -228,6 +261,25 @@ app.get('/posts/:id/comments', async (req, res) => {
       (SELECT count(*)::int FROM comment_votes v WHERE v.comment_id=c.id AND v.value=-1) AS down,
       ${currentUser ? `(SELECT COALESCE(MAX(value),0) FROM comment_votes v2 WHERE v2.comment_id=c.id AND v2.user_id='${currentUser}') AS my_vote` : `0 AS my_vote`}
     FROM comments c WHERE c.post_id=$1 ORDER BY created_at ASC`, [req.params.id]);
+  // Enrich comment authors
+  try {
+    const ids = Array.from(new Set(rows.map(r => r.user_id))).filter(Boolean);
+    if (ids.length) {
+      const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids }) });
+      if (resp.ok) {
+        const j = await resp.json();
+        const map = new Map((j?.users || []).map(u => [u.id, u]));
+        for (const r of rows) {
+          const u = map.get(r.user_id);
+          if (u) {
+            r.author_display_name = u.display_name || u.email || r.author_name || r.author_email || null;
+            r.author_avatar_media_id = u.avatar_media_id || null;
+            r.author_email = u.email || r.author_email || null;
+          }
+        }
+      }
+    }
+  } catch {}
   res.json(rows);
 });
 

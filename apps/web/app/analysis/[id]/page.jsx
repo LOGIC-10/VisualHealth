@@ -1,11 +1,13 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
 import { renderMarkdown } from '../../../components/markdown';
 
 import WaveSurfer from 'wavesurfer.js';
 
 const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
+const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
 
 const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
 const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
@@ -15,6 +17,7 @@ export default function AnalysisDetail({ params }) {
   const { t, lang } = useI18n();
   const { id } = params;
   const [token, setToken] = useState(null);
+  const [me, setMe] = useState(null);
   const [meta, setMeta] = useState(null);
   const [features, setFeatures] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
@@ -224,7 +227,22 @@ export default function AnalysisDetail({ params }) {
     requestAnimationFrame(() => { try { el.scrollTop = el.scrollHeight; } catch {} });
   }, [chatMsgs, chatBusy, chatOpen]);
 
-  useEffect(() => { setToken(localStorage.getItem('vh_token')); }, []);
+  useEffect(() => { try { setToken(localStorage.getItem('vh_token')); } catch {} }, []);
+
+  // Load current user once and subscribe to profile changes; seed from cache to avoid flicker
+  useEffect(() => {
+    let tkn = null; try { tkn = localStorage.getItem('vh_token'); } catch {}
+    if (tkn) {
+      try { const cached = window.__vh_user; if (cached && cached.id) setMe(cached); } catch {}
+      fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${tkn}` } })
+        .then(r=> r.ok ? r.json() : Promise.reject())
+        .then(u=>{ if (u && !u.error) setMe(u); })
+        .catch(()=>{});
+    }
+    function onUserChange(ev){ const u = ev?.detail; if (u && u.id) setMe(u); }
+    window.addEventListener('vh_user_change', onUserChange);
+    return () => window.removeEventListener('vh_user_change', onUserChange);
+  }, []);
 
   // Persisted pending flag to avoid repeated submissions across reloads
   useEffect(() => {
@@ -710,7 +728,7 @@ export default function AnalysisDetail({ params }) {
 
   if (!token) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</a>
+      <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div>{t('LoginToView')}</div>
     </div>
   );
@@ -726,7 +744,7 @@ export default function AnalysisDetail({ params }) {
       alignItems: 'start'
     }}>
       <div style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
-      <a href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</a>
+      <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         {!editing ? (
           <>
@@ -955,8 +973,22 @@ export default function AnalysisDetail({ params }) {
       </div>
       {chatOpen && (
         <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', marginTop: 12, minWidth:300, maxWidth:420, alignSelf:'start', position:'sticky', top: navOffset, height: `calc(100vh - ${navOffset + 16}px)` }}>
-          <div style={{ padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <div style={{ fontWeight:600 }}>{t('AIConversation')}</div>
+          <div style={{ padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+            <div style={{ fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>
+              <span>{t('AIConversation')}</span>
+              {me && (
+                <span style={{ display:'inline-flex', alignItems:'center', gap:6, color:'#64748b', fontWeight:400, fontSize:12 }}>
+                  {me.avatar_media_id ? (
+                    <img src={`${MEDIA_BASE}/file/${me.avatar_media_id}?v=${me.avatar_media_id}`} alt="me" width={16} height={16} style={{ width:16, height:16, borderRadius:9999, objectFit:'cover' }} />
+                  ) : (
+                    <span style={{ width:16, height:16, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:10 }}>
+                      {(me.display_name||me.email||'U').trim()[0]?.toUpperCase?.()||'U'}
+                    </span>
+                  )}
+                  <span>{me.display_name || me.email}</span>
+                </span>
+              )}
+            </div>
             <button onClick={()=> setChatOpen(false)} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✕</button>
           </div>
           <div ref={chatScrollRef} style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
@@ -992,7 +1024,13 @@ export default function AnalysisDetail({ params }) {
                     )}
                   </div>
                   {isUser && (
-                    <div style={{ width:28, height:28, borderRadius:9999, background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>U</div>
+                    me?.avatar_media_id ? (
+                      <img src={`${MEDIA_BASE}/file/${me.avatar_media_id}?v=${me.avatar_media_id}`} alt="me" width={28} height={28} style={{ width:28, height:28, borderRadius:9999, objectFit:'cover', display:'block' }} />
+                    ) : (
+                      <div style={{ width:28, height:28, borderRadius:9999, background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
+                        {(me?.display_name||me?.email||'U')?.trim?.()?.[0]?.toUpperCase?.() || 'U'}
+                      </div>
+                    )
                   )}
                 </div>
               );

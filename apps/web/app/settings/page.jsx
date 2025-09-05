@@ -44,7 +44,7 @@ export default function SettingsPage() {
           <label style={{ color:'#475569' }}>{t('DisplayName')}</label>
           <input placeholder={t('DisplayName')} value={displayName} onChange={e => setDisplayName(e.target.value)} />
           <div>
-            <button onClick={save} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff', width: 120 }}>{t('Save')}</button>
+            <button onClick={save} className="vh-btn vh-btn-primary" style={{ width:120 }}>{t('Save')}</button>
           </div>
         </div>
       )}

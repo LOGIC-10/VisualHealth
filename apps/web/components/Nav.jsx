@@ -55,24 +55,22 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
     <nav style={{ position: 'sticky', top: 0, zIndex: 10, background: isDark ? 'rgba(11,18,32,0.92)' : 'rgba(255,255,255,0.92)', borderBottom: `1px solid ${isDark ? '#283548' : '#e5e7eb'}`, boxShadow: isDark ? '0 1px 8px rgba(0,0,0,0.25)' : '0 1px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems:'center', justifyContent:'space-between', gap: 16, padding: '14px 24px' }}>
       <div style={{ display:'flex', alignItems:'center', gap:18 }}>
         <a href="/" style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', textDecoration: 'none', color: isDark ? '#f8fafc' : '#0f172a' }}>VisualHealth</a>
-        <div style={{ display: 'flex', gap: 16 }} suppressHydrationWarning>
-          <a href="/analysis" style={{ textDecoration: 'none', color: isDark ? '#cbd5e1' : '#334155', fontWeight: 600 }}>{T('Analysis')}</a>
-          <a href="/community" style={{ textDecoration: 'none', color: isDark ? '#cbd5e1' : '#334155', fontWeight: 600 }}>{T('Community')}</a>
+        <div style={{ display: 'flex', gap: 16 }}>
+          <a href="/analysis" className="vh-nav-link">{T('Analysis')}</a>
+          <a href="/community" className="vh-nav-link">{T('Community')}</a>
         </div>
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
         {/* Lang toggle */}
-        <button onClick={()=>setLang(l=> l==='en'?'zh':'en')} title={lang==='en'?'中文':'English'}
-          style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:isDark?'#0f172a':'#fff', color:isDark?'#111':'#111', cursor:'pointer' }}>
+        <button onClick={()=>setLang(l=> l==='en'?'zh':'en')} title={lang==='en'?'中文':'English'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
           {lang==='en' ? 'EN' : '中文'}
         </button>
         {/* Theme toggle */}
-        <button onClick={()=>setTheme(t=> t==='dark'?'light':'dark')} title={isDark?'Switch to Light':'切换夜间模式'}
-          style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:isDark?'#0f172a':'#fff', color:isDark?'#111':'#111', cursor:'pointer' }}>
+        <button onClick={()=>setTheme(t=> t==='dark'?'light':'dark')} title={isDark?'Switch to Light':'切换夜间模式'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
           {isDark ? '☀️' : '🌙'}
         </button>
         {!mounted || !token ? (
-          <a href="/auth" style={{ textDecoration:'none', padding:'8px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:isDark?'#111827':'#fff', color:isDark?'#e2e8f0':'#111' }}>{T('Login')}</a>
+          <a href="/auth" className="vh-btn vh-btn-outline" style={{ textDecoration:'none' }}>{T('Login')}</a>
         ) : (
           <div ref={menuRef} style={{ position:'relative' }}>
             <button onClick={() => setOpen(v=>!v)} style={{ display:'flex', alignItems:'center', gap:8, background:'transparent', border:'none', cursor:'pointer' }}>

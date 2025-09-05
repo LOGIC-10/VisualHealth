@@ -26,3 +26,36 @@ body { font-family: ui-sans-serif, system-ui, -apple-system; }
 
 a { color: inherit; }
 
+/* Common buttons */
+.vh-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .05s ease;
+}
+.vh-btn:hover { filter: brightness(0.97); }
+.vh-btn:active { transform: translateY(1px); }
+.vh-btn-primary { background: #111; color: #fff; border-color: #111; }
+.vh-btn-outline { background: #fff; color: #111; }
+.vh-btn-stop { background: #60a5fa; color: #fff; border-color: #60a5fa; }
+
+/* Nav links */
+.vh-nav-link {
+  text-decoration: none;
+  color: #334155;
+  font-weight: 600;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+  transition: color .15s ease, border-color .15s ease;
+}
+.vh-nav-link:hover { color: #0f172a; border-bottom-color: #94a3b8; }
+
+/* Dark theme overrides */
+[data-theme='dark'] .vh-btn { background: #0f172a; color: #e2e8f0; border-color: #334155; }
+[data-theme='dark'] .vh-btn-primary { background: #111; color: #fff; border-color: #111; }
+[data-theme='dark'] .vh-btn-outline { background: #0f172a; color: #e2e8f0; border-color: #334155; }
+[data-theme='dark'] .vh-nav-link { color: #cbd5e1; }
+[data-theme='dark'] .vh-nav-link:hover { color: #f8fafc; border-bottom-color: #475569; }

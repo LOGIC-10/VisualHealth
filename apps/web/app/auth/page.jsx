@@ -30,7 +30,7 @@ export default function AuthPage() {
         <input placeholder={t('Email')} value={email} onChange={e => setEmail(e.target.value)} />
         <input type="password" placeholder={t('Password')} value={password} onChange={e => setPassword(e.target.value)} />
         {mode === 'signup' && <input placeholder={t('DisplayName')} value={displayName} onChange={e => setDisplayName(e.target.value)} />}
-        <button onClick={submit} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff' }}>{mode === 'login' ? t('Login') : t('CreateAccount')}</button>
+        <button onClick={submit} className="vh-btn vh-btn-primary">{mode === 'login' ? t('Login') : t('CreateAccount')}</button>
         <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} style={{ background: 'transparent', border: 'none', color: '#2563eb' }}>
           {mode === 'login' ? t('NoAccount') : t('HaveAccount')}
         </button>

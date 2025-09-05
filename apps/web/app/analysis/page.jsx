@@ -295,7 +295,7 @@ export default function AnalysisListPage() {
       <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
         <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('AnalysisTitle')}</h1>
         <p>{t('LoginToView')}</p>
-        <a href="/auth" style={{ textDecoration:'none', padding:'10px 14px', borderRadius:8, background:'#111', color:'#fff' }}>{t('Login')}</a>
+        <a href="/auth" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('Login')}</a>
       </div>
     );
   }
@@ -306,7 +306,7 @@ export default function AnalysisListPage() {
         <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('AnalysisTitle')}</h1>
         <div style={{ display:'flex', alignItems:'center', gap:8, position:'relative' }}>
           {/* Filter button */}
-          <button onClick={()=>setFiltersOpen(v=>!v)} title="筛选/排序" style={{ padding:'10px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
+          <button onClick={()=>setFiltersOpen(v=>!v)} title="筛选/排序" className="vh-btn vh-btn-outline" style={{ padding:'10px 12px', display:'inline-flex', alignItems:'center', gap:6 }}>
             {/* Filter icon */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="#0f172a" strokeWidth="1.5" fill="none"/></svg>
             <span>筛选</span>
@@ -343,14 +343,14 @@ export default function AnalysisListPage() {
                   </div>
                 </div>
                 <div style={{ gridColumn:'1 / -1', display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
-                  <button onClick={()=>{ setFilterName(''); setFilterType(''); setDateStart(''); setDateEnd(''); setSortOrder('desc'); }} style={{ padding:'6px 10px', background:'#f1f5f9', border:'1px solid #e5e7eb', borderRadius:6, cursor:'pointer' }}>重置</button>
-                  <button onClick={()=>setFiltersOpen(false)} style={{ padding:'6px 10px', background:'#111', color:'#fff', border:'1px solid #111', borderRadius:6, cursor:'pointer' }}>完成</button>
+                  <button onClick={()=>{ setFilterName(''); setFilterType(''); setDateStart(''); setDateEnd(''); setSortOrder('desc'); }} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px', borderRadius:6 }}>重置</button>
+                  <button onClick={()=>setFiltersOpen(false)} className="vh-btn vh-btn-primary" style={{ padding:'6px 10px', borderRadius:6 }}>完成</button>
                 </div>
               </div>
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="audio/*" multiple onChange={onFiles} style={{ display:'none' }} />
-          <button onClick={pickFiles} style={{ textDecoration:'none', padding:'10px 14px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>{t('NewAnalysis')}</button>
+          <button onClick={pickFiles} className="vh-btn vh-btn-outline" style={{ padding:'10px 14px' }}>{t('NewAnalysis')}</button>
         </div>
       </div>
       {busy && (

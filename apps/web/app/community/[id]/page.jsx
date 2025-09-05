@@ -179,7 +179,7 @@ export default function PostDetail({ params }) {
           <div style={{ flex:1, display:'flex', gap:8, alignItems:'center' }}>
             <input value={editText} onChange={e=>setEditText(e.target.value)} style={{ flex:1, padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
             <button onClick={()=>setEditing(false)} style={{ padding:'8px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff' }}>取消</button>
-            <button onClick={saveEdit} style={{ padding:'8px 10px', borderRadius:8, background:'#111', color:'#fff' }}>保存</button>
+          <button onClick={saveEdit} className="vh-btn vh-btn-primary" style={{ padding:'8px 10px' }}>保存</button>
           </div>
         )}
         {/* Owner actions menu */}
@@ -234,7 +234,7 @@ export default function PostDetail({ params }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
           <input ref={fileInputRef} style={{ display: 'none' }} type="file" multiple accept="image/*" onChange={onPick} />
           <span style={{ color: '#64748b' }}>{files.length} / 12</span>
-          <button onClick={comment} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff' }}>Send</button>
+          <button onClick={comment} className="vh-btn vh-btn-primary">Send</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8, marginTop: 8 }}>
           {files.map((f, i) => (
@@ -378,7 +378,7 @@ function CommentItem({ c, depth=0, onReply, replyingId, replyText, setReplyText,
               ))}
             </div>
             <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
-              <button onClick={()=>onSendReply(c.id)} disabled={false} style={{ padding:'6px 10px', borderRadius:8, background:'#111', color:'#fff' }}>发送</button>
+              <button onClick={()=>onSendReply(c.id)} disabled={false} className="vh-btn vh-btn-primary" style={{ padding:'6px 10px' }}>发送</button>
             </div>
           </div>
         </div>

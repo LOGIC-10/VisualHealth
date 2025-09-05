@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 export const dict = {
   en: {
@@ -298,23 +298,38 @@ export const dict = {
   }
 };
 
+export const I18nCtx = createContext({ initialLang: 'en' });
+
+export function I18nProvider({ initialLang = 'en', children }) {
+  return (<I18nCtx.Provider value={{ initialLang }}>{children}</I18nCtx.Provider>);
+}
+
 export function useI18n() {
-  const getLang = () => {
-    // Keep SSR and first hydration consistent: prefer document attributes;
-    // if none present, default to 'en' and let effects update after mount.
+  const ctx = useContext(I18nCtx);
+  const initialFromCtx = ctx?.initialLang === 'zh' ? 'zh' : (ctx?.initialLang === 'en' ? 'en' : null);
+  // For initial render, prefer server-provided context; fallback to document attribute; default to 'en'.
+  const [lang, setLang] = useState(() => {
+    if (initialFromCtx) return initialFromCtx;
     if (typeof document !== 'undefined') {
       const d = document.documentElement.getAttribute('data-lang');
       if (d === 'zh' || d === 'en') return d;
-      const h = document.documentElement.getAttribute('lang');
-      if (h === 'zh' || h === 'en') return h;
-      return 'en';
     }
-    // On server, no document/localStorage; use default.
     return 'en';
-  };
-  const [lang, setLang] = useState(getLang());
+  });
   useEffect(() => {
-    function onChange(ev){ const v = ev?.detail || getLang(); setLang(v); }
+    const detect = () => {
+      try {
+        const d = document.documentElement.getAttribute('data-lang');
+        if (d === 'zh' || d === 'en') return d;
+        const h = document.documentElement.getAttribute('lang');
+        if (h === 'zh' || h === 'en') return h;
+        const ls = localStorage.getItem('vh_lang');
+        if (ls === 'zh' || ls === 'en') return ls;
+      } catch {}
+      return 'en';
+    };
+    setLang(detect());
+    function onChange(ev){ const v = ev?.detail || detect(); setLang(v); }
     window.addEventListener('vh_lang_change', onChange);
     window.addEventListener('storage', onChange);
     return () => {

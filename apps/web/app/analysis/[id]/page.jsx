@@ -731,7 +731,7 @@ export default function AnalysisDetail({ params }) {
         {!editing ? (
           <>
             <h1 style={{ fontSize: 24, margin: '12px 0' }}>{title || (meta?.filename || '') || t('AnalysisTitle')}</h1>
-            <button onClick={()=>setEditing(true)} title={t('EditTitle')} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#64748b' }}>✎</button>
+            <button onClick={()=>setEditing(true)} title={t('EditTitle')} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✎</button>
           </>
         ) : (
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -744,8 +744,8 @@ export default function AnalysisDetail({ params }) {
                 const json = await resp.json();
                 if (json?.id) { setMeta(m=>({ ...(m||{}), title })); setEditing(false); }
               } catch {}
-            }} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff' }}>{t('Save')}</button>
-            <button onClick={()=>{ setTitle(meta?.title || meta?.filename || ''); setEditing(false); }} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff' }}>{t('Cancel')}</button>
+            }} className="vh-btn vh-btn-primary" style={{ padding:'6px 10px' }}>{t('Save')}</button>
+            <button onClick={()=>{ setTitle(meta?.title || meta?.filename || ''); setEditing(false); }} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>{t('Cancel')}</button>
           </div>
         )}
       </div>
@@ -759,7 +759,7 @@ export default function AnalysisDetail({ params }) {
               <button onClick={async ()=>{
                 if (!gainOn) { setGainOn(true); setGainOpen(true); }
                 else { setGainOn(false); setGainOpen(false); disableGainPipeline(); /* keep graph alive */ }
-              }} style={{ padding:'2px 6px', borderRadius:6, border:'none', background:'transparent', color:'#64748b', cursor:'pointer' }}>
+              }} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px', borderRadius:6 }}>
                 {t('AudioGain')} · {gainOn ? t('GainOn') : t('GainOff')}
               </button>
               {gainOn && (
@@ -898,7 +898,7 @@ export default function AnalysisDetail({ params }) {
       <div style={{ display:'flex', alignItems:'center', gap:8, margin:'12px 0 6px' }}>
         <div style={{ fontSize: 18, fontWeight: 600 }}>{t('AIAnalysis')}</div>
         {aiText && (
-          <button onClick={()=> setChatOpen(true)} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', color:'#0f172a', cursor:'pointer' }}>
+          <button onClick={()=> setChatOpen(true)} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
             {t('StartConversation')}
           </button>
         )}
@@ -917,7 +917,7 @@ export default function AnalysisDetail({ params }) {
               try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
             }catch(e){ setAiErr((e?.message)||'AI analysis failed'); setAiSubmitted(false); try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {} }
             finally{ setAiBusy(false); }
-          }} style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor: pcmPayload?'pointer':'not-allowed', opacity: (aiBusy || aiSubmitted) ? 0.7 : 1 }}>
+          }} className="vh-btn vh-btn-primary" style={{ padding:'8px 12px', opacity: (aiBusy || aiSubmitted) ? 0.7 : 1, cursor: pcmPayload?'pointer':'not-allowed' }}>
             {aiBusy ? t('Analyzing') : aiSubmitted ? t('SubmittedBG') : t('RunAI')}
           </button>
           {/* Remove duplicate submitted hint since button text shows it */}
@@ -957,7 +957,7 @@ export default function AnalysisDetail({ params }) {
         <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', marginTop: 12, minWidth:300, maxWidth:420, alignSelf:'start', position:'sticky', top: navOffset, height: `calc(100vh - ${navOffset + 16}px)` }}>
           <div style={{ padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
             <div style={{ fontWeight:600 }}>{t('AIConversation')}</div>
-            <button onClick={()=> setChatOpen(false)} style={{ border:'none', background:'transparent', cursor:'pointer', color:'#64748b' }}>✕</button>
+            <button onClick={()=> setChatOpen(false)} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✕</button>
           </div>
           <div ref={chatScrollRef} style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
             {chatMsgs.length===0 && (
@@ -1002,9 +1002,9 @@ export default function AnalysisDetail({ params }) {
             <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v || chatBusy) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8 }}>
               <input name="msg" placeholder={t('TypeMessage')} autoComplete="off" style={{ flex:1, padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
               {!chatBusy ? (
-                <button type="submit" style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor:'pointer' }}>{t('Send')}</button>
+                <button type="submit" className="vh-btn vh-btn-primary">{t('Send')}</button>
               ) : (
-                <button type="button" onClick={cancelChat} style={{ padding:'8px 12px', borderRadius:8, background:'#60a5fa', color:'#fff', cursor:'pointer' }} title={lang==='zh' ? '终止生成' : 'Stop generation'}>
+                <button type="button" onClick={cancelChat} className="vh-btn vh-btn-stop" title={lang==='zh' ? '终止生成' : 'Stop generation'}>
                   {lang==='zh' ? '■ 终止' : '■ Stop'}
                 </button>
               )}

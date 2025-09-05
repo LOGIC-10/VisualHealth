@@ -63,9 +63,9 @@ export default function CommunityPage() {
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('CommunityTitle')}</h1>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
         {token ? (
-          <a href="/community/post" style={{ textDecoration: 'none', padding: '10px 14px', borderRadius: 8, background: '#111', color: '#fff' }}>{t('NewPost')}</a>
+          <a href="/community/post" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('NewPost')}</a>
         ) : (
-          <a href="/auth" style={{ textDecoration: 'none', padding: '10px 14px', borderRadius: 8, border:'1px solid #e5e7eb', background: '#fff', color: '#111' }}>{t('LoginToPost')}</a>
+          <a href="/auth" className="vh-btn vh-btn-outline" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('LoginToPost')}</a>
         )}
       </div>
 

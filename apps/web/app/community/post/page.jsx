@@ -81,7 +81,7 @@ export default function CreatePostPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <a href="/community" style={{ textDecoration: 'none', color: '#2563eb' }}>{t('Back')}</a>
+      <a href="/community" className="vh-nav-link" style={{ textDecoration:'none' }}>{t('Back')}</a>
       <h1 style={{ fontSize: 24, margin: '12px 0' }}>{t('CreatePostTitle')}</h1>
       <div style={{ display: 'grid', gap: 12 }}>
         <textarea placeholder={t('ShareStory')} value={content} onChange={e => setContent(e.target.value)} style={{ padding: 12, borderRadius: 8, border: '1px solid #e5e7eb', minHeight: 120 }} />
@@ -89,8 +89,8 @@ export default function CreatePostPage() {
           <input ref={fileInputRef} style={{ display: 'none' }} type="file" multiple accept="image/*" onChange={onPick} />
           <input ref={replaceInputRef} style={{ display: 'none' }} type="file" accept="image/*" onChange={onReplace} />
           <span style={{ color: '#64748b' }}>{files.length} / 12</span>
-          <button onClick={openPicker} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' }}>{t('AddImages')}</button>
-          <button disabled={busy} onClick={publish} style={{ padding: '8px 12px', borderRadius: 8, background: '#111', color: '#fff' }}>{busy ? 'Posting...' : t('Post')}</button>
+          <button onClick={openPicker} className="vh-btn vh-btn-outline">{t('AddImages')}</button>
+          <button disabled={busy} onClick={publish} className="vh-btn vh-btn-primary">{busy ? 'Posting...' : t('Post')}</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: gridCols.columns, gap: 8 }}>
           {files.map((f, i) => (

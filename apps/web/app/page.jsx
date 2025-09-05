@@ -190,7 +190,7 @@ export default function HomePage() {
           <h1 style={{ fontSize: 56, lineHeight: 1.05, margin: 0 }}>{t('HomeHeroTitle')}</h1>
           <p style={{ fontSize: 20, marginTop: 16 }}>{t('HomeHeroDesc')}</p>
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-            <button onClick={openGuide} style={{ padding: '12px 16px', background: '#111', color: '#fff', borderRadius: 12, textDecoration: 'none', cursor:'pointer' }}>{t('GetStarted')}</button>
+            <button onClick={openGuide} className="vh-btn vh-btn-primary" style={{ padding:'12px 16px', borderRadius:12 }}>{t('GetStarted')}</button>
             <a href="/community" style={{ padding: '12px 16px', background: '#e5e7eb', color: '#111', borderRadius: 12, textDecoration: 'none' }}>{t('ExploreCommunity')}</a>
           </div>
         </div>
@@ -236,7 +236,7 @@ export default function HomePage() {
                 ))}
               </div>
               <div style={{ marginTop:16, display:'flex', gap:12 }}>
-                <button onClick={openGuide} style={{ padding:'12px 16px', borderRadius:12, background:'#111', color:'#fff', cursor:'pointer' }}>{t('GetStarted')}</button>
+                <button onClick={openGuide} className="vh-btn vh-btn-primary" style={{ padding:'12px 16px', borderRadius:12 }}>{t('GetStarted')}</button>
                 <a href="/analysis" style={{ padding:'12px 16px', borderRadius:12, background:'#e5e7eb', color:'#111', textDecoration:'none' }}>{t('Analysis')}</a>
               </div>
             </div>
@@ -312,8 +312,8 @@ export default function HomePage() {
             <h3 style={{ margin:'6px 0 8px', fontSize:22 }}>{t('GuideTitle')}</h3>
             <p style={{ color:'#475569', margin:'0 0 12px' }}>{t('GuideDesc')}</p>
             <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-              <button onClick={()=>setGuide(false)} style={{ padding:'8px 12px', borderRadius:8, border:'1px solid #e5e7eb', background:'#fff', cursor:'pointer' }}>{t('GuideCancel')}</button>
-              <button onClick={()=>fileInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:8, background:'#111', color:'#fff', cursor:'pointer' }}>{t('GuideUpload')}</button>
+              <button onClick={()=>setGuide(false)} className="vh-btn vh-btn-outline">{t('GuideCancel')}</button>
+              <button onClick={()=>fileInputRef.current?.click()} className="vh-btn vh-btn-primary">{t('GuideUpload')}</button>
             </div>
             {busy && (
               <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:8, color:'#64748b' }}>

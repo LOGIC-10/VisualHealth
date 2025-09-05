@@ -30,6 +30,13 @@ async function init() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_kg REAL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_media_id UUID;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_display_name_change_at TIMESTAMPTZ;
+    -- Extensions for privacy and security
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_visibility JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_extras JSONB;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
   `);
 }
 
@@ -87,7 +94,8 @@ app.get('/me', async (req, res) => {
     const token = auth.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
     const { rows } = await pool.query(
-      `SELECT id, email, display_name, phone, birth_date, gender, height_cm, weight_kg, avatar_media_id, last_display_name_change_at
+      `SELECT id, email, display_name, phone, birth_date, gender, height_cm, weight_kg, avatar_media_id, last_display_name_change_at,
+              profile_visibility, profile_extras, email_verified_at, phone_verified_at, totp_enabled
        FROM users WHERE id=$1`,
       [payload.sub]
     );
@@ -110,7 +118,7 @@ app.patch('/me', async (req, res) => {
     if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'missing token' });
     const token = auth.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
-    const { displayName, phone, birthDate, gender, heightCm, weightKg, avatarMediaId } = req.body || {};
+    const { displayName, phone, birthDate, gender, heightCm, weightKg, avatarMediaId, visibility, extras } = req.body || {};
 
     // Load current to compare and handle cooldown only when actual change requested
     const cur = await pool.query('SELECT display_name, last_display_name_change_at FROM users WHERE id=$1', [payload.sub]);
@@ -135,6 +143,15 @@ app.patch('/me', async (req, res) => {
       }
     }
 
+    // Validate birth date if provided
+    if (typeof birthDate !== 'undefined' && birthDate) {
+      const bd = new Date(birthDate);
+      const now = new Date();
+      if (isNaN(bd.getTime()) || bd > now) {
+        return res.status(400).json({ error: 'invalid birth date' });
+      }
+    }
+
     const { rows } = await pool.query(
       `UPDATE users SET
         display_name = COALESCE($1, display_name),
@@ -144,9 +161,12 @@ app.patch('/me', async (req, res) => {
         height_cm = COALESCE($5, height_cm),
         weight_kg = COALESCE($6, weight_kg),
         avatar_media_id = COALESCE($7, avatar_media_id),
+        profile_visibility = COALESCE($8, profile_visibility),
+        profile_extras = COALESCE(profile_extras, '{}'::jsonb) || COALESCE($9, '{}'::jsonb),
         last_display_name_change_at = CASE WHEN $1 IS NOT NULL AND $1 <> display_name THEN now() ELSE last_display_name_change_at END
-       WHERE id=$8
-       RETURNING id, email, display_name, phone, birth_date, gender, height_cm, weight_kg, avatar_media_id, last_display_name_change_at`,
+       WHERE id=$10
+       RETURNING id, email, display_name, phone, birth_date, gender, height_cm, weight_kg, avatar_media_id, last_display_name_change_at,
+                 profile_visibility, profile_extras, email_verified_at, phone_verified_at, totp_enabled`,
       [
         proposedDisplay,
         phone ?? null,
@@ -155,6 +175,8 @@ app.patch('/me', async (req, res) => {
         (typeof heightCm === 'number' ? Math.max(0, Math.min(300, Math.round(heightCm))) : null),
         (typeof weightKg === 'number' ? Math.max(0, Math.min(500, Number(weightKg))) : null),
         avatarMediaId ?? null,
+        (visibility && typeof visibility === 'object') ? JSON.stringify(visibility) : null,
+        (extras && typeof extras === 'object') ? JSON.stringify(extras) : null,
         payload.sub,
       ]
     );
@@ -164,6 +186,27 @@ app.patch('/me', async (req, res) => {
     res.json({ ...u, next_allowed_display_name_change_at });
   } catch (e) {
     res.status(400).json({ error: 'update failed' });
+  }
+});
+
+// Change password
+app.post('/me/password', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'missing token' });
+    const token = auth.slice(7);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'missing fields' });
+    const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [payload.sub]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    const ok = await bcrypt.compare(currentPassword, rows[0].password_hash);
+    if (!ok) return res.status(401).json({ error: 'invalid current password' });
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, payload.sub]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: 'password change failed' });
   }
 });
 

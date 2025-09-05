@@ -33,6 +33,10 @@ export default function SettingsPage() {
   const [err, setErr] = useState('');
   const [editingBasic, setEditingBasic] = useState(false);
   const [editingMedical, setEditingMedical] = useState(false);
+  const [birthDateErr, setBirthDateErr] = useState('');
+  const [editingVitals, setEditingVitals] = useState(false);
+  const [editingHistory, setEditingHistory] = useState(false);
+  const [editingLifestyle, setEditingLifestyle] = useState(false);
   // Privacy & extras
   const [visibility, setVisibility] = useState({ preset: 'private', fields: {} }); // fields: key -> 'private'|'doctor'|'public'
   // Units
@@ -97,6 +101,13 @@ export default function SettingsPage() {
     return isFinite(val) ? val.toFixed(1) : '';
   }, [heightCm, weightKg]);
 
+  const completenessPct = useMemo(() => {
+    let filled = 0; const total = 12;
+    if (displayName) filled++; if (phone) filled++; if (birthDate) filled++; if (gender) filled++; if (heightCm) filled++; if (weightKg) filled++;
+    if (vitals.hr) filled++; if (vitals.sys && vitals.dia) filled++; if (vitals.spo2) filled++; if (vitals.bodyFat) filled++; if (vitals.waist) filled++;
+    return Math.min(100, Math.round((filled/total)*100));
+  }, [displayName, phone, birthDate, gender, heightCm, weightKg, vitals]);
+
   function formatLocalDate(v){
     if (!v) return '—';
     try { const d = new Date(v); if (isNaN(d.getTime())) return String(v); return d.toLocaleDateString(); } catch { return String(v); }
@@ -109,11 +120,6 @@ export default function SettingsPage() {
     if (!token) return;
     setSaving(true); setErr('');
     try {
-      // Validate birth date (not in future)
-      if (birthDate) {
-        const bd = new Date(birthDate); const now = new Date();
-        if (isNaN(bd.getTime()) || bd > now) { setErr(lang==='zh' ? '出生日期不能晚于今天' : 'Birth date cannot be in the future'); return false; }
-      }
       // Build PATCH body only with changed fields to avoid side effects (e.g., nickname cooldown)
       const body = {};
       // Track local patch fallback to ensure UI reflects change even if server echo is partial
@@ -122,7 +128,8 @@ export default function SettingsPage() {
       if (typeof user?.display_name === 'undefined' || dn !== (user?.display_name || '')) { body.displayName = dn; localPatch.display_name = dn; }
       const ph = (phone || '').trim();
       if (ph !== (user?.phone || '')) { body.phone = ph || null; localPatch.phone = ph || ''; }
-      if ((birthDate || '') !== (user?.birth_date || '')) { body.birthDate = birthDate || null; localPatch.birth_date = birthDate || ''; }
+      const birthChanged = (birthDate || '') !== (user?.birth_date || '');
+      if (birthChanged) { body.birthDate = birthDate || null; localPatch.birth_date = birthDate || ''; }
       if ((gender || '') !== (user?.gender || '')) { body.gender = gender || null; localPatch.gender = gender || ''; }
       const hVal = heightCm ? parseInt(heightCm, 10) : null;
       const hCur = (user?.height_cm != null ? Number(user.height_cm) : null);
@@ -132,6 +139,12 @@ export default function SettingsPage() {
       if (wVal !== wCur) { body.weightKg = wVal; localPatch.weight_kg = (wVal != null ? wVal : null); }
       const aCur = user?.avatar_media_id || null;
       if ((avatarId || null) !== aCur) { body.avatarMediaId = avatarId || null; localPatch.avatar_media_id = (avatarId || null); }
+
+      // Validate birth date only if it is being saved/changed
+      if ('birthDate' in body && body.birthDate) {
+        const bd = new Date(body.birthDate); const now = new Date();
+        if (isNaN(bd.getTime()) || bd > now) { setBirthDateErr(lang==='zh' ? '出生日期不能晚于今天' : 'Birth date cannot be in the future'); return false; }
+      } else { setBirthDateErr(''); }
 
       // Attach visibility/extras always for consistency
       body.visibility = visibility;
@@ -160,9 +173,10 @@ export default function SettingsPage() {
         }
         return false;
       }
+      setBirthDateErr('');
       // Merge server echo if provided; otherwise fall back to localPatch so UI reflects saved data immediately
       const merged = (function(){
-        const base = { ...(u || {}) };
+        const base = { ...(user || {}) };
         return { ...base, ...localPatch, ...(j && j.id ? j : {}) };
       })();
       setUser(merged);
@@ -203,6 +217,29 @@ export default function SettingsPage() {
   async function onSaveMedical(){
     const ok = await onSave();
     if (ok) setEditingMedical(false);
+  }
+
+  async function onSaveVitals(){ const ok = await onSave(); if (ok) setEditingVitals(false); }
+  async function onSaveHistory(){ const ok = await onSave(); if (ok) setEditingHistory(false); }
+  async function onSaveLifestyle(){ const ok = await onSave(); if (ok) setEditingLifestyle(false); }
+
+  function resetFromUser(){
+    if (!user) return;
+    const ex = user.profile_extras || {};
+    setVitals({
+      hr: ex?.vitals?.hr!=null? String(ex.vitals.hr):'',
+      sys: ex?.vitals?.sys!=null? String(ex.vitals.sys):'',
+      dia: ex?.vitals?.dia!=null? String(ex.vitals.dia):'',
+      spo2: ex?.vitals?.spo2!=null? String(ex.vitals.spo2):'',
+      bodyFat: ex?.vitals?.bodyFat!=null? String(ex.vitals.bodyFat):'',
+      waist: ex?.vitals?.waist!=null? String(ex.vitals.waist):'',
+    });
+    setHistory({
+      past: ex?.history?.past||'', surgeries: ex?.history?.surgeries||'', family: ex?.history?.family||'', meds: ex?.history?.meds||'', allergies: ex?.history?.allergies||''
+    });
+    setLifestyle({
+      smoking: ex?.lifestyle?.smoking||'', alcohol: ex?.lifestyle?.alcohol||'', exercise: ex?.lifestyle?.exercise||'', sleepHours: ex?.lifestyle?.sleepHours!=null? String(ex.lifestyle.sleepHours):''
+    });
   }
 
   function labelGender(v){
@@ -305,12 +342,30 @@ export default function SettingsPage() {
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('ProfileTitle')}</h1>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:12 }}>
+        <h1 style={{ fontSize: 28 }}>{t('ProfileTitle')}</h1>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <div style={{ minWidth:220 }}>
+            <div style={{ fontSize:12, color:'#64748b', textAlign:'right' }}>{lang==='zh'?'资料完善度':'Completeness'}: {completenessPct}%</div>
+            <div style={{ width:'100%', height:8, background:'#f1f5f9', borderRadius:9999, overflow:'hidden' }}>
+              <div style={{ width:`${completenessPct}%`, height:'100%', background:'#2563eb' }} />
+            </div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'隐私设置':'Privacy'}:</span>
+            <select value={visibility.preset} onChange={e=>{ const p=e.target.value; setVisibility(v=>({ preset:p, fields: Object.fromEntries(Object.keys(v.fields||{}).map(k=>[k,p])) })); }} style={{ padding:'6px 8px', border:'1px solid #e5e7eb', borderRadius:8 }}>
+              <option value="private">{lang==='zh'?'仅自己':'Only me'}</option>
+              <option value="doctor">{lang==='zh'?'医生':'Doctor'}</option>
+              <option value="public">{lang==='zh'?'公开':'Public'}</option>
+            </select>
+          </div>
+        </div>
+      </div>
       {!user && <div>{t('Loading')}</div>}
       {user && (
-        <div style={{ display:'grid', gap:16 }}>
+        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16, display:'grid', gap:16 }}>
           {/* Account card */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+          <div style={{ background:'transparent', border:'none', borderRadius:0, padding:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:12 }}>
               {/* Avatar */}
               <div style={{ position:'relative' }}>
@@ -344,79 +399,26 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Privacy preset + completeness */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-              <div style={{ fontWeight:600 }}>{lang==='zh'?'隐私设置':'Privacy'}</div>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'预设':'Preset'}:</span>
-                <select value={visibility.preset} onChange={e=>{ const p=e.target.value; setVisibility(v=>({ preset:p, fields: Object.fromEntries(Object.entries(v.fields||{}).map(([k])=>[k,p])) })); }} style={{ padding:'6px 8px', border:'1px solid #e5e7eb', borderRadius:8 }}>
-                  <option value="private">{lang==='zh'?'仅自己':'Only me'}</option>
-                  <option value="doctor">{lang==='zh'?'医生可见':'Doctor'}</option>
-                  <option value="public">{lang==='zh'?'公开':'Public'}</option>
-                </select>
-              </div>
-              <div style={{ marginLeft:'auto', minWidth:240 }}>
-                {(() => {
-                  const total = 6 + 6; // basic+medical rough baseline
-                  let filled = 0;
-                  if (displayName) filled++; if (phone) filled++; if (birthDate) filled++; if (gender) filled++; if (heightCm) filled++; if (weightKg) filled++;
-                  if (vitals.hr) filled++; if (vitals.sys && vitals.dia) filled++; if (vitals.spo2) filled++; if (vitals.bodyFat) filled++; if (vitals.waist) filled++;
-                  const pct = Math.min(100, Math.round((filled/total)*100));
-                  return (
-                    <div>
-                      <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'资料完善度':'Completeness'}: {pct}%</div>
-                      <div style={{ width:'100%', height:8, background:'#f1f5f9', borderRadius:9999, overflow:'hidden' }}>
-                        <div style={{ width:`${pct}%`, height:'100%', background:'#2563eb' }} />
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
+          
 
           {/* Basic info card (view/edit toggle) */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16, position:'relative' }}>
-            <div style={{ position:'absolute', right:12, top:12 }}>
+          <div style={{ background:'transparent', border:'none', borderRadius:0, padding:0, position:'relative' }}>
+            <div style={{ position:'absolute', right:12, top:12, display:'flex', gap:12 }}>
               {!editingBasic ? (
-                <button onClick={()=>{ setEditingBasic(true); setErr(''); setOkHint(''); }} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px', color:'#2563eb' }}>✎ {lang==='zh'?'编辑':'Edit'}</button>
+                <button onClick={()=>{ setEditingBasic(true); setErr(''); setOkHint(''); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{lang==='zh'?'编辑':'Edit'}</button>
               ) : (
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                  <button onClick={onSaveBasic} disabled={saving} className="vh-btn vh-btn-primary" style={{ padding:'6px 10px' }}>{t('Save')}</button>
-                  <button onClick={()=>{ setDisplayName(user.display_name||''); setPhone(user.phone||''); setEditingBasic(false); }} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>{t('Cancel')}</button>
-                </div>
+                <>
+                  <button onClick={onSaveBasic} disabled={saving} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Save')}</button>
+                  <button onClick={()=>{ setDisplayName(user.display_name||''); setPhone(user.phone||''); setEditingBasic(false); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Cancel')}</button>
+                </>
               )}
             </div>
             <div style={{ fontWeight:600, marginBottom:8 }}>{lang==='zh'?'基本信息':'Basic Info'}</div>
             {!editingBasic ? (
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12 }}>
-                <div>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <div style={{ fontSize:12, color:'#64748b' }}>{t('DisplayName')}</div>
-                    <select value={visibility.fields.display_name || visibility.preset} onChange={e=>setVisibility(v=>({ ...v, fields: { ...v.fields, display_name: e.target.value } }))} style={{ fontSize:12, border:'1px solid #e5e7eb', borderRadius:6 }}>
-                      <option value="private">{lang==='zh'?'仅自己':'Only me'}</option>
-                      <option value="doctor">{lang==='zh'?'医生':'Doctor'}</option>
-                      <option value="public">{lang==='zh'?'公开':'Public'}</option>
-                    </select>
-                  </div>
-                  <div>{user.display_name || '—'}</div>
-                </div>
-                <div>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <div style={{ fontSize:12, color:'#64748b' }}>{t('Phone')}</div>
-                    <select value={visibility.fields.phone || visibility.preset} onChange={e=>setVisibility(v=>({ ...v, fields: { ...v.fields, phone: e.target.value } }))} style={{ fontSize:12, border:'1px solid #e5e7eb', borderRadius:6 }}>
-                      <option value="private">{lang==='zh'?'仅自己':'Only me'}</option>
-                      <option value="doctor">{lang==='zh'?'医生':'Doctor'}</option>
-                      <option value="public">{lang==='zh'?'公开':'Public'}</option>
-                    </select>
-                  </div>
-                  <div>{user.phone || '—'}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize:12, color:'#64748b' }}>{t('Email')}</div>
-                  <div>{user.email}</div>
-                </div>
+                <div><div style={{ fontSize:12, color:'#64748b' }}>{t('DisplayName')}</div><div>{user.display_name || '—'}</div></div>
+                <div><div style={{ fontSize:12, color:'#64748b' }}>{t('Phone')}</div><div>{user.phone || '—'}</div></div>
+                <div><div style={{ fontSize:12, color:'#64748b' }}>{t('Email')}</div><div>{user.email}</div></div>
               </div>
             ) : (
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12 }}>
@@ -436,35 +438,25 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-            {(okHint || err) && <div style={{ marginTop:8, fontSize:13 }}>{okHint && <span style={{ color:'#16a34a', marginRight:8 }}>{okHint}</span>}{err && <span style={{ color:'#b91c1c' }}>{err}</span>}</div>}
+            
           </div>
 
           {/* Medical info card (view/edit toggle) */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16, position:'relative' }}>
-            <div style={{ position:'absolute', right:12, top:12 }}>
+          <div style={{ background:'transparent', border:'none', borderRadius:0, padding:0, position:'relative' }}>
+            <div style={{ position:'absolute', right:12, top:12, display:'flex', gap:12 }}>
               {!editingMedical ? (
-                <button onClick={()=>{ setEditingMedical(true); setErr(''); setOkHint(''); }} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px', color:'#2563eb' }}>✎ {lang==='zh'?'编辑':'Edit'}</button>
+                <button onClick={()=>{ setEditingMedical(true); setErr(''); setOkHint(''); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{lang==='zh'?'编辑':'Edit'}</button>
               ) : (
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                  <button onClick={onSaveMedical} disabled={saving} className="vh-btn vh-btn-primary" style={{ padding:'6px 10px' }}>{t('Save')}</button>
-                  <button onClick={()=>{ setBirthDate(user.birth_date||''); setGender(user.gender||''); setHeightCm(user.height_cm!=null?String(user.height_cm):''); setWeightKg(user.weight_kg!=null?String(user.weight_kg):''); setEditingMedical(false); }} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>{t('Cancel')}</button>
-                </div>
+                <>
+                  <button onClick={onSaveMedical} disabled={saving} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Save')}</button>
+                  <button onClick={()=>{ setBirthDate(user.birth_date||''); setGender(user.gender||''); setHeightCm(user.height_cm!=null?String(user.height_cm):''); setWeightKg(user.weight_kg!=null?String(user.weight_kg):''); setEditingMedical(false); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Cancel')}</button>
+                </>
               )}
             </div>
             <div style={{ fontWeight:600, marginBottom:8 }}>{lang==='zh'?'医疗相关':'Medical'}</div>
             {!editingMedical ? (
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12 }}>
-                <div>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <div style={{ fontSize:12, color:'#64748b' }}>{t('BirthDate')}</div>
-                    <select value={visibility.fields.birth_date || visibility.preset} onChange={e=>setVisibility(v=>({ ...v, fields: { ...v.fields, birth_date: e.target.value } }))} style={{ fontSize:12, border:'1px solid #e5e7eb', borderRadius:6 }}>
-                      <option value="private">{lang==='zh'?'仅自己':'Only me'}</option>
-                      <option value="doctor">{lang==='zh'?'医生':'Doctor'}</option>
-                      <option value="public">{lang==='zh'?'公开':'Public'}</option>
-                    </select>
-                  </div>
-                  <div>{formatLocalDate(user.birth_date)}{calcAgeYears(user.birth_date)!=null ? ` · ${calcAgeYears(user.birth_date)}${lang==='zh'?'岁':'y'}` : ''}</div>
-                </div>
+                <div><div style={{ fontSize:12, color:'#64748b' }}>{t('BirthDate')}</div><div>{formatLocalDate(user.birth_date)}{calcAgeYears(user.birth_date)!=null ? ` · ${calcAgeYears(user.birth_date)}${lang==='zh'?'岁':'y'}` : ''}</div></div>
                 <div><div style={{ fontSize:12, color:'#64748b' }}>{t('Gender')}</div><div>{labelGender(user.gender)}</div></div>
                 <div><div style={{ fontSize:12, color:'#64748b' }}>{t('HeightCm')}</div><div>{user.height_cm!=null? `${user.height_cm} cm`:'—'}</div></div>
                 <div><div style={{ fontSize:12, color:'#64748b' }}>{t('WeightKg')}</div><div>{user.weight_kg!=null? `${user.weight_kg} kg`:'—'}</div></div>
@@ -474,7 +466,8 @@ export default function SettingsPage() {
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12 }}>
                 <div>
                   <div style={{ fontSize:12, color:'#64748b' }}>{t('BirthDate')}</div>
-                  <input type="date" value={birthDate || ''} onChange={e=>setBirthDate(e.target.value)} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                  <input type="date" value={birthDate || ''} onChange={e=>{ setBirthDate(e.target.value); setBirthDateErr(''); }} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                  {birthDateErr && <div style={{ marginTop:4, fontSize:12, color:'#b91c1c' }}>{birthDateErr}</div>}
                 </div>
                 <div>
                   <div style={{ fontSize:12, color:'#64748b' }}>{t('Gender')}</div>
@@ -516,70 +509,100 @@ export default function SettingsPage() {
           </div>
 
           {/* Vitals */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+          <div style={{ background:'transparent', border:'none', borderRadius:0, padding:'16px 0', position:'relative' }}>
+            <div style={{ position:'absolute', right:12, top:16, display:'flex', gap:12 }}>
+              {!editingVitals ? (
+                <button onClick={()=>{ setEditingVitals(true); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{lang==='zh'?'编辑':'Edit'}</button>
+              ) : (
+                <>
+                  <button onClick={onSaveVitals} disabled={saving} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Save')}</button>
+                  <button onClick={()=>{ resetFromUser(); setEditingVitals(false); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Cancel')}</button>
+                </>
+              )}
+            </div>
             <div style={{ fontWeight:600, marginBottom:8 }}>{lang==='zh'?'生命体征':'Vitals'}</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:12 }}>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'静息心率':'Resting HR'} (bpm)</div>
-                <input type="number" min={20} max={220} value={vitals.hr} onChange={e=>setVitals(v=>({ ...v, hr: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={20} max={220} value={vitals.hr} onChange={e=>setVitals(v=>({ ...v, hr: e.target.value }))} disabled={!editingVitals} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingVitals? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'收缩压':'Systolic'} (mmHg)</div>
-                <input type="number" min={60} max={250} value={vitals.sys} onChange={e=>setVitals(v=>({ ...v, sys: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={60} max={250} value={vitals.sys} onChange={e=>setVitals(v=>({ ...v, sys: e.target.value }))} disabled={!editingVitals} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingVitals? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'舒张压':'Diastolic'} (mmHg)</div>
-                <input type="number" min={30} max={150} value={vitals.dia} onChange={e=>setVitals(v=>({ ...v, dia: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={30} max={150} value={vitals.dia} onChange={e=>setVitals(v=>({ ...v, dia: e.target.value }))} disabled={!editingVitals} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingVitals? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>SpO₂ (%)</div>
-                <input type="number" min={50} max={100} value={vitals.spo2} onChange={e=>setVitals(v=>({ ...v, spo2: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={50} max={100} value={vitals.spo2} onChange={e=>setVitals(v=>({ ...v, spo2: e.target.value }))} disabled={!editingVitals} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingVitals? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'体脂率':'Body Fat'} (%)</div>
-                <input type="number" min={0} max={100} value={vitals.bodyFat} onChange={e=>setVitals(v=>({ ...v, bodyFat: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={0} max={100} value={vitals.bodyFat} onChange={e=>setVitals(v=>({ ...v, bodyFat: e.target.value }))} disabled={!editingVitals} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingVitals? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'腰围':'Waist'} (cm)</div>
-                <input type="number" min={0} max={300} value={vitals.waist} onChange={e=>setVitals(v=>({ ...v, waist: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={0} max={300} value={vitals.waist} onChange={e=>setVitals(v=>({ ...v, waist: e.target.value }))} disabled={!editingVitals} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingVitals? '#fff':'#f8fafc' }} />
               </div>
             </div>
           </div>
 
           {/* Medical history & allergies */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+          <div style={{ background:'transparent', border:'none', borderRadius:0, padding:'16px 0', position:'relative' }}>
+            <div style={{ position:'absolute', right:12, top:16, display:'flex', gap:12 }}>
+              {!editingHistory ? (
+                <button onClick={()=>{ setEditingHistory(true); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{lang==='zh'?'编辑':'Edit'}</button>
+              ) : (
+                <>
+                  <button onClick={onSaveHistory} disabled={saving} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Save')}</button>
+                  <button onClick={()=>{ resetFromUser(); setEditingHistory(false); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Cancel')}</button>
+                </>
+              )}
+            </div>
             <div style={{ fontWeight:600, marginBottom:8 }}>{lang==='zh'?'病史与过敏':'History & Allergies'}</div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr', gap:8 }}>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'既往病史':'Past history'}</div>
-                <textarea value={history.past} onChange={e=>setHistory(h=>({ ...h, past: e.target.value }))} rows={2} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <textarea value={history.past} onChange={e=>setHistory(h=>({ ...h, past: e.target.value }))} rows={2} disabled={!editingHistory} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8, background: editingHistory? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'手术史':'Surgeries'}</div>
-                <textarea value={history.surgeries} onChange={e=>setHistory(h=>({ ...h, surgeries: e.target.value }))} rows={2} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <textarea value={history.surgeries} onChange={e=>setHistory(h=>({ ...h, surgeries: e.target.value }))} rows={2} disabled={!editingHistory} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8, background: editingHistory? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'家族史':'Family history'}</div>
-                <textarea value={history.family} onChange={e=>setHistory(h=>({ ...h, family: e.target.value }))} rows={2} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <textarea value={history.family} onChange={e=>setHistory(h=>({ ...h, family: e.target.value }))} rows={2} disabled={!editingHistory} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8, background: editingHistory? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'药物清单':'Medications'}</div>
-                <textarea value={history.meds} onChange={e=>setHistory(h=>({ ...h, meds: e.target.value }))} rows={2} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <textarea value={history.meds} onChange={e=>setHistory(h=>({ ...h, meds: e.target.value }))} rows={2} disabled={!editingHistory} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8, background: editingHistory? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'过敏史':'Allergies'}</div>
-                <textarea value={history.allergies} onChange={e=>setHistory(h=>({ ...h, allergies: e.target.value }))} rows={2} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <textarea value={history.allergies} onChange={e=>setHistory(h=>({ ...h, allergies: e.target.value }))} rows={2} disabled={!editingHistory} style={{ width:'100%', padding:8, border:'1px solid #e5e7eb', borderRadius:8, background: editingHistory? '#fff':'#f8fafc' }} />
               </div>
             </div>
           </div>
 
           {/* Lifestyle */}
-          <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+          <div style={{ background:'transparent', border:'none', borderRadius:0, padding:'16px 0', position:'relative' }}>
+            <div style={{ position:'absolute', right:12, top:16, display:'flex', gap:12 }}>
+              {!editingLifestyle ? (
+                <button onClick={()=>{ setEditingLifestyle(true); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{lang==='zh'?'编辑':'Edit'}</button>
+              ) : (
+                <>
+                  <button onClick={onSaveLifestyle} disabled={saving} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Save')}</button>
+                  <button onClick={()=>{ resetFromUser(); setEditingLifestyle(false); }} style={{ background:'transparent', border:'none', color:'#2563eb', cursor:'pointer' }}>{t('Cancel')}</button>
+                </>
+              )}
+            </div>
             <div style={{ fontWeight:600, marginBottom:8 }}>{lang==='zh'?'生活方式':'Lifestyle'}</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12 }}>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'吸烟':'Smoking'}</div>
-                <select value={lifestyle.smoking} onChange={e=>setLifestyle(s=>({ ...s, smoking: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }}>
+                <select value={lifestyle.smoking} onChange={e=>setLifestyle(s=>({ ...s, smoking: e.target.value }))} disabled={!editingLifestyle} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingLifestyle? '#fff':'#f8fafc' }}>
                   <option value="">—</option>
                   <option value="none">{lang==='zh'?'不吸烟':'None'}</option>
                   <option value="occasional">{lang==='zh'?'偶尔':'Occasional'}</option>
@@ -588,7 +611,7 @@ export default function SettingsPage() {
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'饮酒':'Alcohol'}</div>
-                <select value={lifestyle.alcohol} onChange={e=>setLifestyle(s=>({ ...s, alcohol: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }}>
+                <select value={lifestyle.alcohol} onChange={e=>setLifestyle(s=>({ ...s, alcohol: e.target.value }))} disabled={!editingLifestyle} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingLifestyle? '#fff':'#f8fafc' }}>
                   <option value="">—</option>
                   <option value="none">{lang==='zh'?'不饮酒':'None'}</option>
                   <option value="occasional">{lang==='zh'?'偶尔':'Occasional'}</option>
@@ -597,11 +620,11 @@ export default function SettingsPage() {
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'运动频率(次/周)':'Exercise (/wk)'}</div>
-                <input type="number" min={0} max={21} value={lifestyle.exercise} onChange={e=>setLifestyle(s=>({ ...s, exercise: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={0} max={21} value={lifestyle.exercise} onChange={e=>setLifestyle(s=>({ ...s, exercise: e.target.value }))} disabled={!editingLifestyle} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingLifestyle? '#fff':'#f8fafc' }} />
               </div>
               <div>
                 <div style={{ fontSize:12, color:'#64748b' }}>{lang==='zh'?'睡眠(小时/天)':'Sleep (h/day)'}</div>
-                <input type="number" min={0} max={24} step="0.1" value={lifestyle.sleepHours} onChange={e=>setLifestyle(s=>({ ...s, sleepHours: e.target.value }))} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+                <input type="number" min={0} max={24} step="0.1" value={lifestyle.sleepHours} onChange={e=>setLifestyle(s=>({ ...s, sleepHours: e.target.value }))} disabled={!editingLifestyle} style={{ width:'100%', padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8, background: editingLifestyle? '#fff':'#f8fafc' }} />
               </div>
             </div>
           </div>

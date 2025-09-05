@@ -119,7 +119,22 @@ export default function AnalysisDetail({ params }) {
           const jsonStr = line.replace(/^data:\s*/, '');
           try {
             const evt = JSON.parse(jsonStr);
-            if (evt?.delta) setChatMsgs(cur => { const c = cur.slice(); const last=c[c.length-1]; if (last && last.role==='assistant') last.content=(last.content||'')+evt.delta; return c; });
+            if (evt?.delta) {
+              const piece = String(evt.delta);
+              setChatMsgs(cur => {
+                const c = cur.slice();
+                const last = c[c.length - 1];
+                if (last && last.role === 'assistant') {
+                  const prev = last.content || '';
+                  // Robust merge: allow for providers that send cumulative text or overlapping chunks
+                  let k = Math.min(prev.length, piece.length);
+                  while (k > 0 && !prev.endsWith(piece.slice(0, k))) k--;
+                  const toAppend = piece.slice(k);
+                  if (toAppend) last.content = prev + toAppend;
+                }
+                return c;
+              });
+            }
             if (evt?.error) throw new Error(evt.error);
           } catch {}
         }

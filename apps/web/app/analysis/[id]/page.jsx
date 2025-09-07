@@ -715,8 +715,10 @@ export default function AnalysisDetail({ params }) {
         const rectW = rect.width;
         const minPx = duration > 0 ? (rectW / duration) : 10;
         const next = Math.max(minPx, Math.min(5000, rectW / selDur));
+        const centerSec = startSec + selDur / 2;
+        if (audioRef.current) audioRef.current.currentTime = centerSec;
         setPxPerSec(next);
-        requestAnimationFrame(() => zoomAt(startSec + selDur / 2, next));
+        requestAnimationFrame(() => zoomAt(centerSec, next));
       }
       return;
     }
@@ -856,12 +858,10 @@ export default function AnalysisDetail({ params }) {
           ctx.fillText(label + 's', x + 2, 12);
         }
       }
-      // Playhead marker synced with waveform scroll
-      const a = audioRef.current; if (a) {
+      const a = audioRef.current;
+      if (a && playheadTimeRef.current) {
         const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
-        const playX = Math.round((playSec - startSec) * pps) + 0.5;
-        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX, 0); ctx.lineTo(playX, h); ctx.stroke();
-        if (playheadTimeRef.current) playheadTimeRef.current.textContent = playSec.toFixed(2) + 's';
+        playheadTimeRef.current.textContent = playSec.toFixed(2) + 's';
       }
       // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {

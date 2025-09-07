@@ -34,6 +34,7 @@ export default function AnalysisDetail({ params }) {
   const isDraggingRef = useRef(false);
   const pinchRef = useRef({ active:false, id1:null, id2:null, startDist:0, startPx:0 });
   const playheadRef = useRef(null);
+  const playheadTimeRef = useRef(null);
   const selectionRef = useRef(null);
   const selectLabelRef = useRef(null);
   const [viewRange, setViewRange] = useState({ start: 0, end: 0 });
@@ -447,6 +448,7 @@ export default function AnalysisDetail({ params }) {
       minPxPerSec: pxPerSec,
       waveColor: '#94a3b8',
       progressColor: '#94a3b8',
+      cursorWidth: 0,
       normalize: true,
       interact: false, // disable seeking by click; playback controlled by audio element
     });
@@ -457,6 +459,7 @@ export default function AnalysisDetail({ params }) {
       const minPx = d > 0 ? (cw / d) : 100;
       setPxPerSec(minPx);
       ws.zoom(minPx);
+      try { ws.drawBuffer(); } catch {}
     });
     wsRef.current = ws;
     return () => {
@@ -569,6 +572,7 @@ export default function AnalysisDetail({ params }) {
       const next = Math.max(minPx, Math.min(5000, currentPx * (1 / factor)));
       setPxPerSec(next);
       wsRef.current.zoom(next);
+      try { wsRef.current.drawBuffer(); } catch {}
       const newScrollLeft = Math.max(0, pivotSec * next - rect.width / 2);
       const maxScroll = Math.max(0, next * duration - rect.width);
       // Apply after zoom paint to ensure alignment
@@ -670,6 +674,7 @@ export default function AnalysisDetail({ params }) {
         const next = Math.max(minPx, Math.min(5000, rectW / selDur));
         setPxPerSec(next);
         wsRef.current?.zoom(next);
+        try { wsRef.current?.drawBuffer(); } catch {}
         const maxScroll = Math.max(0, next * duration - rectW);
         requestAnimationFrame(() => {
           wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, startSec * next));
@@ -726,6 +731,7 @@ export default function AnalysisDetail({ params }) {
         const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
         setPxPerSec(next);
         wsRef.current.zoom(next);
+        try { wsRef.current.drawBuffer(); } catch {}
         const pivotSec = audioRef.current
           ? audioRef.current.currentTime
           : (waveWrapRef.current.scrollLeft + rect.width / 2) / pxPerSec;
@@ -746,10 +752,15 @@ export default function AnalysisDetail({ params }) {
       const end = Math.min(duration || 0, start + (wrap.clientWidth || 0) / pps);
       setViewRange({ start, end });
       // update playhead position as well
-      const a = audioRef.current; const ph = playheadRef.current;
+      const a = audioRef.current; const ph = playheadRef.current; const pt = playheadTimeRef.current;
       if (a && ph) {
-        const x = (Math.max(0, Math.min(duration || 0, a.currentTime)) - start) * pps;
+        const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
+        const x = (playSec - start) * pps;
         ph.style.left = x + 'px';
+        if (pt) {
+          pt.style.left = x + 'px';
+          pt.textContent = playSec.toFixed(2) + 's';
+        }
       }
     };
     update();
@@ -797,9 +808,14 @@ export default function AnalysisDetail({ params }) {
       }
       // Playhead marker
       const a = audioRef.current; if (a) {
-        const playX = (Math.max(0, Math.min(duration || 0, a.currentTime)) - startSec) * pps;
+        const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
+        const playX = (playSec - startSec) * pps;
         ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
         if (playheadRef.current) playheadRef.current.style.left = playX + 'px';
+        if (playheadTimeRef.current) {
+          playheadTimeRef.current.style.left = playX + 'px';
+          playheadTimeRef.current.textContent = playSec.toFixed(2) + 's';
+        }
       }
       // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
@@ -919,6 +935,7 @@ export default function AnalysisDetail({ params }) {
           style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
         >
           <div ref={playheadRef} style={{ position:'absolute', top:0, bottom:0, width:2, background:'#ef4444', pointerEvents:'none' }} />
+          <div ref={playheadTimeRef} style={{ position:'absolute', bottom:-16, left:0, transform:'translateX(-50%)', color:'#ef4444', fontSize:12, background:'rgba(255,255,255,0.9)', padding:'1px 2px', borderRadius:4, pointerEvents:'none' }} />
           <div ref={selectionRef} style={{ position:'absolute', top:0, bottom:0, background:'rgba(59,130,246,0.3)', border:'1px solid rgba(59,130,246,0.6)', display:'none', pointerEvents:'none' }} />
           <div ref={selectLabelRef} style={{ position:'absolute', top:4, left:0, background:'rgba(191,219,254,0.9)', color:'#1e3a8a', fontSize:12, padding:'2px 4px', borderRadius:4, display:'none', pointerEvents:'none' }} />
           <div style={{ position:'absolute', top:4, right:8, background:'#fff', border:'1px solid #e5e7eb', borderRadius:4, fontSize:12, padding:'2px 4px', color:'#1e293b', pointerEvents:'none' }}>{rangeLabel}</div>

@@ -32,7 +32,7 @@ export default function AnalysisDetail({ params }) {
   const wsRef = useRef(null);
   const lastXRef = useRef(0);
   const isDraggingRef = useRef(false);
-  const pinchRef = useRef({ active:false, id1:null, id2:null, startDist:0, startPx:0, startScroll:0 });
+  const pinchRef = useRef({ active:false, id1:null, id2:null, startDist:0, startPx:0 });
   const playheadRef = useRef(null);
   const selectionRef = useRef(null);
   const selectLabelRef = useRef(null);
@@ -697,7 +697,6 @@ export default function AnalysisDetail({ params }) {
       pinchRef.current.active = true;
       pinchRef.current.startDist = 0;
       pinchRef.current.startPx = pxPerSec;
-      pinchRef.current.startScroll = el.scrollLeft;
     }
   }
   function onPointerUp(e){
@@ -727,7 +726,9 @@ export default function AnalysisDetail({ params }) {
         const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
         setPxPerSec(next);
         wsRef.current.zoom(next);
-        const pivotSec = audioRef.current ? audioRef.current.currentTime : 0;
+        const pivotSec = audioRef.current
+          ? audioRef.current.currentTime
+          : (waveWrapRef.current.scrollLeft + rect.width / 2) / pxPerSec;
         const newScrollLeft = Math.max(0, pivotSec * next - rect.width / 2);
         const maxScroll = Math.max(0, next * duration - rect.width);
         waveWrapRef.current.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));

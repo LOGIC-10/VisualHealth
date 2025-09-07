@@ -575,7 +575,7 @@ export default function AnalysisDetail({ params }) {
       scroll = playX - half;
     }
     wrapper.scrollLeft = scroll;
-    const px = playX - scroll;
+    const px = Math.max(0, Math.min(rect.width - 2, playX - scroll));
     if (playheadRef.current) playheadRef.current.style.left = px + 'px';
     if (playheadTimeRef.current) playheadTimeRef.current.style.left = px + 'px';
   }
@@ -719,14 +719,17 @@ export default function AnalysisDetail({ params }) {
       }
       return;
     }
-    // Click-to-seek if not dragging
-    if (!movedRef.current && duration) {
-      const rect = wrapper.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const sec = Math.max(0, Math.min(duration, (wrapper.scrollLeft + x) / pxPerSec));
-      if (audioRef.current) audioRef.current.currentTime = sec;
-    }
     isDraggingRef.current = false;
+  }
+
+  // Click-to-seek handler
+  function onClick(e){
+    const wrapper = waveWrapRef.current; if (!wrapper || movedRef.current || selectingRef.current) return;
+    if (!duration) return;
+    const rect = wrapper.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const sec = Math.max(0, Math.min(duration, (wrapper.scrollLeft + x) / pxPerSec));
+    if (audioRef.current) audioRef.current.currentTime = sec;
   }
 
   // Pinch zoom with two pointers
@@ -956,6 +959,7 @@ export default function AnalysisDetail({ params }) {
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
+          onClick={onClick}
           onFocus={()=>setWaveFocused(true)}
           onBlur={()=>setWaveFocused(false)}
           onKeyDown={(e)=>{

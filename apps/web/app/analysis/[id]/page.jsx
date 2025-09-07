@@ -459,7 +459,7 @@ export default function AnalysisDetail({ params }) {
       const minPx = d > 0 ? (cw / d) : 100;
       setPxPerSec(minPx);
       ws.zoom(minPx);
-      try { ws.drawBuffer(); } catch {}
+      try { ws.drawer.updateSize(); ws.drawBuffer(); } catch {}
     });
     wsRef.current = ws;
     return () => {
@@ -554,6 +554,15 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => () => { disableGainPipeline(); }, []);
 
+  function centerOnPlayhead(nextPx=pxPerSec){
+    const wrapper = waveWrapRef.current; const a = audioRef.current; if (!wrapper || !a) return;
+    const rect = wrapper.getBoundingClientRect();
+    const pps = nextPx;
+    const maxScroll = Math.max(0, pps * (duration || 0) - rect.width);
+    const target = a.currentTime * pps - rect.width / 2;
+    wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, target));
+  }
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -564,21 +573,13 @@ export default function AnalysisDetail({ params }) {
     const isZoom = e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > Math.abs(e.deltaX);
     const currentPx = pxPerSec;
     const minPx = duration > 0 ? (rect.width / duration) : 10;
-    // Use pxPerSec as the single source of truth for mapping time<->pixels
-    const secPerPx = 1 / currentPx;
     if (isZoom) {
-      const pivotSec = audioRef.current ? audioRef.current.currentTime : (wrapper.scrollLeft + rect.width / 2) * secPerPx;
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
       const next = Math.max(minPx, Math.min(5000, currentPx * (1 / factor)));
       setPxPerSec(next);
       wsRef.current.zoom(next);
-      try { wsRef.current.drawBuffer(); } catch {}
-      const newScrollLeft = Math.max(0, pivotSec * next - rect.width / 2);
-      const maxScroll = Math.max(0, next * duration - rect.width);
-      // Apply after zoom paint to ensure alignment
-      requestAnimationFrame(() => {
-        wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
-      });
+      try { wsRef.current.drawer.updateSize(); wsRef.current.drawBuffer(); } catch {}
+      requestAnimationFrame(() => centerOnPlayhead(next));
     } else {
       const current = wrapper.scrollLeft + (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
       const maxScroll = Math.max(0, currentPx * duration - rect.width);
@@ -674,7 +675,7 @@ export default function AnalysisDetail({ params }) {
         const next = Math.max(minPx, Math.min(5000, rectW / selDur));
         setPxPerSec(next);
         wsRef.current?.zoom(next);
-        try { wsRef.current?.drawBuffer(); } catch {}
+        try { wsRef.current?.drawer.updateSize(); wsRef.current?.drawBuffer(); } catch {}
         const maxScroll = Math.max(0, next * duration - rectW);
         requestAnimationFrame(() => {
           wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, startSec * next));
@@ -731,13 +732,8 @@ export default function AnalysisDetail({ params }) {
         const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
         setPxPerSec(next);
         wsRef.current.zoom(next);
-        try { wsRef.current.drawBuffer(); } catch {}
-        const pivotSec = audioRef.current
-          ? audioRef.current.currentTime
-          : (waveWrapRef.current.scrollLeft + rect.width / 2) / pxPerSec;
-        const newScrollLeft = Math.max(0, pivotSec * next - rect.width / 2);
-        const maxScroll = Math.max(0, next * duration - rect.width);
-        waveWrapRef.current.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
+        try { wsRef.current.drawer.updateSize(); wsRef.current.drawBuffer(); } catch {}
+        centerOnPlayhead(next);
       }
     }
   }
@@ -766,6 +762,20 @@ export default function AnalysisDetail({ params }) {
     update();
     wrap.addEventListener('scroll', update);
     return () => wrap.removeEventListener('scroll', update);
+  }, [pxPerSec, duration]);
+
+  // Keep playhead centered during playback
+  useEffect(() => {
+    let raf = 0; const a = audioRef.current; const wrap = waveWrapRef.current;
+    if (!a || !wrap) return;
+    const tick = () => {
+      if (!a.paused && !isDraggingRef.current && !selectingRef.current && !pinchRef.current.active) {
+        centerOnPlayhead();
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { if (raf) cancelAnimationFrame(raf); };
   }, [pxPerSec, duration]);
 
   // Time ruler (strictly synced to waveform zoom/pan/playback)

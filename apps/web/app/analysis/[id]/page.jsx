@@ -578,6 +578,7 @@ export default function AnalysisDetail({ params }) {
     const px = Math.max(0, Math.min(rect.width - 2, playX - scroll));
     if (playheadRef.current) playheadRef.current.style.left = px + 'px';
     if (playheadTimeRef.current) playheadTimeRef.current.style.left = px + 'px';
+    refreshOverlay(pps);
   }
 
   function zoomAt(timeSec, nextPx){
@@ -778,26 +779,29 @@ export default function AnalysisDetail({ params }) {
   }
   function onTouchEnd(){ pinchRef.current.startDist = 0; }
 
-  // Track currently visible time range for header label
+  // Update playhead position and absolute time range label
+  function refreshOverlay(pps = pxPerSec){
+    const wrap = waveWrapRef.current; if (!wrap) return;
+    const start = (wrap.scrollLeft || 0) / pps;
+    const end = Math.min(duration || 0, start + (wrap.clientWidth || 0) / pps);
+    setViewRange({ start, end });
+    const a = audioRef.current;
+    const pt = playheadTimeRef.current;
+    if (a) {
+      const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
+      const x = playSec * pps - (wrap.scrollLeft || 0);
+      if (playheadRef.current) playheadRef.current.style.left = x + 'px';
+      if (pt) { pt.textContent = playSec.toFixed(2) + 's'; pt.style.left = x + 'px'; }
+    }
+  }
+
+  // Track visible time range for header label
   useEffect(() => {
     const wrap = waveWrapRef.current; if (!wrap) return;
-    const update = () => {
-      const pps = pxPerSec || 1;
-      const start = (wrap.scrollLeft || 0) / pps;
-      const end = Math.min(duration || 0, start + (wrap.clientWidth || 0) / pps);
-      setViewRange({ start, end });
-      const a = audioRef.current;
-      const pt = playheadTimeRef.current;
-      if (a) {
-        const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
-        const x = playSec * pps - (wrap.scrollLeft || 0);
-        if (playheadRef.current) playheadRef.current.style.left = x + 'px';
-        if (pt) { pt.textContent = playSec.toFixed(2) + 's'; pt.style.left = x + 'px'; }
-      }
-    };
-    update();
-    wrap.addEventListener('scroll', update);
-    return () => wrap.removeEventListener('scroll', update);
+    refreshOverlay();
+    const handle = () => refreshOverlay();
+    wrap.addEventListener('scroll', handle);
+    return () => wrap.removeEventListener('scroll', handle);
   }, [pxPerSec, duration]);
 
   // Keep playhead centered during playback

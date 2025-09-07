@@ -563,9 +563,21 @@ export default function AnalysisDetail({ params }) {
     const wrapper = waveWrapRef.current; const a = audioRef.current; if (!wrapper || !a) return;
     const rect = wrapper.getBoundingClientRect();
     const pps = nextPx;
-    const maxScroll = Math.max(0, pps * (duration || 0) - rect.width);
-    const target = a.currentTime * pps - rect.width / 2;
-    wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, target));
+    const totalW = pps * (duration || 0);
+    const playX = a.currentTime * pps;
+    const half = rect.width / 2;
+    let scroll = wrapper.scrollLeft;
+    if (playX <= half || totalW <= rect.width) {
+      scroll = 0;
+    } else if (playX >= totalW - half) {
+      scroll = Math.max(0, totalW - rect.width);
+    } else {
+      scroll = playX - half;
+    }
+    wrapper.scrollLeft = scroll;
+    const px = playX - scroll;
+    if (playheadRef.current) playheadRef.current.style.left = px + 'px';
+    if (playheadTimeRef.current) playheadTimeRef.current.style.left = px + 'px';
   }
 
   function zoomAt(timeSec, nextPx){
@@ -580,6 +592,7 @@ export default function AnalysisDetail({ params }) {
     const maxScroll = Math.max(0, nextPx * (duration || 0) - rect.width);
     const target = timeSec * nextPx - rect.width / 2;
     wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, target));
+    centerOnPlayhead(nextPx);
   }
 
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
@@ -633,6 +646,7 @@ export default function AnalysisDetail({ params }) {
   const movedRef = useRef(false);
   function onMouseDown(e){
     const wrapper = waveWrapRef.current; if (!wrapper) return;
+    wrapper.focus();
     if (e.shiftKey) {
       selectingRef.current = true;
       const rect = wrapper.getBoundingClientRect();
@@ -769,12 +783,13 @@ export default function AnalysisDetail({ params }) {
       const start = (wrap.scrollLeft || 0) / pps;
       const end = Math.min(duration || 0, start + (wrap.clientWidth || 0) / pps);
       setViewRange({ start, end });
-      // update playhead label as view scrolls
       const a = audioRef.current;
       const pt = playheadTimeRef.current;
-      if (a && pt) {
+      if (a) {
         const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
-        pt.textContent = playSec.toFixed(2) + 's';
+        const x = playSec * pps - (wrap.scrollLeft || 0);
+        if (playheadRef.current) playheadRef.current.style.left = x + 'px';
+        if (pt) { pt.textContent = playSec.toFixed(2) + 's'; pt.style.left = x + 'px'; }
       }
     };
     update();
@@ -834,14 +849,12 @@ export default function AnalysisDetail({ params }) {
           ctx.fillText(label + 's', x + 2, 12);
         }
       }
-      // Playhead marker (fixed in center)
+      // Playhead marker synced with waveform scroll
       const a = audioRef.current; if (a) {
         const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
-        const playX = w / 2;
-        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
-        if (playheadTimeRef.current) {
-          playheadTimeRef.current.textContent = playSec.toFixed(2) + 's';
-        }
+        const playX = Math.round((playSec - startSec) * pps) + 0.5;
+        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX, 0); ctx.lineTo(playX, h); ctx.stroke();
+        if (playheadTimeRef.current) playheadTimeRef.current.textContent = playSec.toFixed(2) + 's';
       }
       // Total duration label when fully in view
       if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
@@ -960,8 +973,8 @@ export default function AnalysisDetail({ params }) {
           onTouchEnd={onTouchEnd}
           style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'visible', touchAction:'none' }}
         >
-          <div ref={playheadRef} style={{ position:'absolute', top:0, bottom:0, width:2, background:'#ef4444', pointerEvents:'none', left:'50%', transform:'translateX(-50%)' }} />
-          <div ref={playheadTimeRef} style={{ position:'absolute', bottom:0, left:'50%', transform:'translate(-50%, 100%)', color:'#ef4444', fontSize:12, background:'rgba(255,255,255,0.9)', padding:'1px 2px', borderRadius:4, pointerEvents:'none', zIndex:20 }} />
+          <div ref={playheadRef} style={{ position:'absolute', top:0, bottom:0, width:2, background:'#ef4444', pointerEvents:'none' }} />
+          <div ref={playheadTimeRef} style={{ position:'absolute', bottom:0, transform:'translate(-50%, 100%)', color:'#ef4444', fontSize:12, background:'rgba(255,255,255,0.9)', padding:'1px 2px', borderRadius:4, pointerEvents:'none', zIndex:20 }} />
           <div ref={selectionRef} style={{ position:'absolute', top:0, bottom:0, background:'rgba(59,130,246,0.3)', border:'1px solid rgba(59,130,246,0.6)', display:'none', pointerEvents:'none' }} />
           <div ref={selectLabelRef} style={{ position:'absolute', top:4, left:0, background:'rgba(191,219,254,0.9)', color:'#1e3a8a', fontSize:12, padding:'2px 4px', borderRadius:4, display:'none', pointerEvents:'none' }} />
           <div style={{ position:'absolute', top:4, right:8, background:'#fff', border:'1px solid #e5e7eb', borderRadius:4, fontSize:12, padding:'2px 4px', color:'#1e293b', pointerEvents:'none' }}>{rangeLabel}</div>

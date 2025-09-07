@@ -459,7 +459,12 @@ export default function AnalysisDetail({ params }) {
       const minPx = d > 0 ? (cw / d) : 100;
       setPxPerSec(minPx);
       ws.zoom(minPx);
-      try { ws.drawer.updateSize(); ws.drawBuffer(); } catch {}
+      try {
+        ws.drawer.updateSize();
+        ws.drawBuffer();
+        ws.drawer.progressWidth = ws.drawer.width;
+      } catch {}
+      requestAnimationFrame(() => centerOnPlayhead(minPx));
     });
     wsRef.current = ws;
     return () => {
@@ -563,6 +568,20 @@ export default function AnalysisDetail({ params }) {
     wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, target));
   }
 
+  function zoomAt(timeSec, nextPx){
+    const wrapper = waveWrapRef.current; if (!wrapper || !wsRef.current) return;
+    const rect = wrapper.getBoundingClientRect();
+    wsRef.current.zoom(nextPx);
+    try {
+      wsRef.current.drawer.updateSize();
+      wsRef.current.drawBuffer();
+      wsRef.current.drawer.progressWidth = wsRef.current.drawer.width;
+    } catch {}
+    const maxScroll = Math.max(0, nextPx * (duration || 0) - rect.width);
+    const target = timeSec * nextPx - rect.width / 2;
+    wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, target));
+  }
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -576,10 +595,10 @@ export default function AnalysisDetail({ params }) {
     if (isZoom) {
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
       const next = Math.max(minPx, Math.min(5000, currentPx * (1 / factor)));
+      const a = audioRef.current;
+      const pivotSec = a ? a.currentTime : (wrapper.scrollLeft + rect.width / 2) / currentPx;
       setPxPerSec(next);
-      wsRef.current.zoom(next);
-      try { wsRef.current.drawer.updateSize(); wsRef.current.drawBuffer(); } catch {}
-      requestAnimationFrame(() => centerOnPlayhead(next));
+      requestAnimationFrame(() => zoomAt(pivotSec, next));
     } else {
       const current = wrapper.scrollLeft + (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
       const maxScroll = Math.max(0, currentPx * duration - rect.width);
@@ -601,6 +620,14 @@ export default function AnalysisDetail({ params }) {
       el.removeEventListener('gesturechange', prevent);
     };
   }, [onWheelNative]);
+
+  useEffect(() => {
+    const a = audioRef.current; if (!a) return;
+    const handle = () => centerOnPlayhead();
+    a.addEventListener('play', handle);
+    a.addEventListener('seeked', handle);
+    return () => { a.removeEventListener('play', handle); a.removeEventListener('seeked', handle); };
+  }, [pxPerSec, duration]);
 
   const downXRef = useRef(0);
   const movedRef = useRef(false);
@@ -674,12 +701,7 @@ export default function AnalysisDetail({ params }) {
         const minPx = duration > 0 ? (rectW / duration) : 10;
         const next = Math.max(minPx, Math.min(5000, rectW / selDur));
         setPxPerSec(next);
-        wsRef.current?.zoom(next);
-        try { wsRef.current?.drawer.updateSize(); wsRef.current?.drawBuffer(); } catch {}
-        const maxScroll = Math.max(0, next * duration - rectW);
-        requestAnimationFrame(() => {
-          wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, startSec * next));
-        });
+        requestAnimationFrame(() => zoomAt(startSec + selDur / 2, next));
       }
       return;
     }
@@ -730,10 +752,10 @@ export default function AnalysisDetail({ params }) {
         const scale = dist / pinchRef.current.startDist;
         const minPx = duration > 0 ? (rect.width / duration) : 10;
         const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
+        const a = audioRef.current;
+        const pivotSec = a ? a.currentTime : (waveWrapRef.current.scrollLeft + rect.width / 2) / pxPerSec;
         setPxPerSec(next);
-        wsRef.current.zoom(next);
-        try { wsRef.current.drawer.updateSize(); wsRef.current.drawBuffer(); } catch {}
-        centerOnPlayhead(next);
+        requestAnimationFrame(() => zoomAt(pivotSec, next));
       }
     }
   }
@@ -942,7 +964,7 @@ export default function AnalysisDetail({ params }) {
           aria-label="waveform"
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
+          style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'visible', touchAction:'none' }}
         >
           <div ref={playheadRef} style={{ position:'absolute', top:0, bottom:0, width:2, background:'#ef4444', pointerEvents:'none' }} />
           <div ref={playheadTimeRef} style={{ position:'absolute', bottom:-16, left:0, transform:'translateX(-50%)', color:'#ef4444', fontSize:12, background:'rgba(255,255,255,0.9)', padding:'1px 2px', borderRadius:4, pointerEvents:'none' }} />

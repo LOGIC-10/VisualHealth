@@ -769,16 +769,12 @@ export default function AnalysisDetail({ params }) {
       const start = (wrap.scrollLeft || 0) / pps;
       const end = Math.min(duration || 0, start + (wrap.clientWidth || 0) / pps);
       setViewRange({ start, end });
-      // update playhead position as well
-      const a = audioRef.current; const ph = playheadRef.current; const pt = playheadTimeRef.current;
-      if (a && ph) {
+      // update playhead label as view scrolls
+      const a = audioRef.current;
+      const pt = playheadTimeRef.current;
+      if (a && pt) {
         const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
-        const x = (playSec - start) * pps;
-        ph.style.left = x + 'px';
-        if (pt) {
-          pt.style.left = x + 'px';
-          pt.textContent = playSec.toFixed(2) + 's';
-        }
+        pt.textContent = playSec.toFixed(2) + 's';
       }
     };
     update();
@@ -838,14 +834,12 @@ export default function AnalysisDetail({ params }) {
           ctx.fillText(label + 's', x + 2, 12);
         }
       }
-      // Playhead marker
+      // Playhead marker (fixed in center)
       const a = audioRef.current; if (a) {
         const playSec = Math.max(0, Math.min(duration || 0, a.currentTime));
-        const playX = (playSec - startSec) * pps;
+        const playX = w / 2;
         ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
-        if (playheadRef.current) playheadRef.current.style.left = playX + 'px';
         if (playheadTimeRef.current) {
-          playheadTimeRef.current.style.left = playX + 'px';
           playheadTimeRef.current.textContent = playSec.toFixed(2) + 's';
         }
       }
@@ -966,8 +960,8 @@ export default function AnalysisDetail({ params }) {
           onTouchEnd={onTouchEnd}
           style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'visible', touchAction:'none' }}
         >
-          <div ref={playheadRef} style={{ position:'absolute', top:0, bottom:0, width:2, background:'#ef4444', pointerEvents:'none' }} />
-          <div ref={playheadTimeRef} style={{ position:'absolute', bottom:-16, left:0, transform:'translateX(-50%)', color:'#ef4444', fontSize:12, background:'rgba(255,255,255,0.9)', padding:'1px 2px', borderRadius:4, pointerEvents:'none' }} />
+          <div ref={playheadRef} style={{ position:'absolute', top:0, bottom:0, width:2, background:'#ef4444', pointerEvents:'none', left:'50%', transform:'translateX(-50%)' }} />
+          <div ref={playheadTimeRef} style={{ position:'absolute', bottom:0, left:'50%', transform:'translate(-50%, 100%)', color:'#ef4444', fontSize:12, background:'rgba(255,255,255,0.9)', padding:'1px 2px', borderRadius:4, pointerEvents:'none', zIndex:20 }} />
           <div ref={selectionRef} style={{ position:'absolute', top:0, bottom:0, background:'rgba(59,130,246,0.3)', border:'1px solid rgba(59,130,246,0.6)', display:'none', pointerEvents:'none' }} />
           <div ref={selectLabelRef} style={{ position:'absolute', top:4, left:0, background:'rgba(191,219,254,0.9)', color:'#1e3a8a', fontSize:12, padding:'2px 4px', borderRadius:4, display:'none', pointerEvents:'none' }} />
           <div style={{ position:'absolute', top:4, right:8, background:'#fff', border:'1px solid #e5e7eb', borderRadius:4, fontSize:12, padding:'2px 4px', color:'#1e293b', pointerEvents:'none' }}>{rangeLabel}</div>

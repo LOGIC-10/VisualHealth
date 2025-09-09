@@ -2,6 +2,9 @@
 :root { color-scheme: light dark; }
 
 html, body { margin: 0; }
+/* Stabilize layout width by reserving vertical scrollbar space */
+html { scrollbar-gutter: stable both-edges; }
+body { overflow-y: scroll; }
 body { font-family: ui-sans-serif, system-ui, -apple-system; }
 
 /* Layout safety */

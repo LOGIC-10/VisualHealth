@@ -5,6 +5,8 @@ import { useI18n } from '../../../components/i18n';
 import { renderMarkdown } from '../../../components/markdown';
 
 import WaveSurfer from 'wavesurfer.js';
+import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js';
+import ZoomPlugin from 'wavesurfer.js/dist/plugins/zoom.esm.js';
 
 const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
 const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
@@ -27,7 +29,8 @@ export default function AnalysisDetail({ params }) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const waveWrapRef = useRef(null);
-  const rulerRef = useRef(null);
+  const timelineRef = useRef(null);
+  const playLabelRef = useRef(null);
   const audioRef = useRef(null);
   const wsRef = useRef(null);
   const lastXRef = useRef(0);
@@ -438,16 +441,22 @@ export default function AnalysisDetail({ params }) {
       media: audioRef.current,
       height: 160,
       minPxPerSec: pxPerSec,
-      waveColor: '#94a3b8',
-      progressColor: '#111827',
+      waveColor: '#4F4A85',
+      progressColor: '#38B3D6',
+      cursorColor: '#FF0000',
+      cursorWidth: 2,
       normalize: true,
-      interact: false, // disable seeking by click; playback controlled by audio element
+      interact: false,
+      plugins: [
+        TimelinePlugin.create({ container: timelineRef.current }),
+        ZoomPlugin.create({ maxZoom: 100, minZoom: 1 })
+      ],
     });
     ws.on('ready', () => {
       const d = ws.getDuration();
       setDuration(d);
       const cw = waveWrapRef.current?.clientWidth || 800;
-      const minPx = d > 0 ? (cw / d) : 100;
+      const minPx = d > 0 ? ((cw + 2) / d) : 100;
       setPxPerSec(minPx);
       ws.zoom(minPx);
     });
@@ -544,6 +553,32 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => () => { disableGainPipeline(); }, []);
 
+  // Red time label near playhead (overlay)
+  useEffect(() => {
+    let raf = 0; let running = true;
+    const draw = () => {
+      if (!running) return;
+      const wrap = waveWrapRef.current; const a = audioRef.current; const label = playLabelRef.current;
+      if (!wrap || !a || !label || !wsRef.current) { raf = requestAnimationFrame(draw); return; }
+      const pps = (pxPerSec && pxPerSec > 0) ? pxPerSec : (wsRef.current?.options?.minPxPerSec || 100);
+      const w = wrap.clientWidth || 0;
+      const cur = Math.max(0, Math.min(duration || 0, a.currentTime || 0));
+      const playX = (cur * pps) - (wrap.scrollLeft || 0);
+      const viewSec = (w > 0 && pps > 0) ? (w / pps) : 0;
+      const decimals = viewSec < 1 ? 3 : viewSec < 10 ? 2 : 1;
+      const txt = cur.toFixed(decimals) + 's';
+      try { label.textContent = txt; } catch {}
+      const labelW = label.offsetWidth || 40;
+      let left = Math.round(playX);
+      left = Math.max(4 + Math.round(labelW/2), Math.min(w - 4 - Math.round(labelW/2), left));
+      label.style.left = left + 'px';
+      label.style.display = (w > 0) ? 'block' : 'none';
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => { running = false; if (raf) cancelAnimationFrame(raf); };
+  }, [duration, pxPerSec]);
+
   // Zoom handler via wheel/pinch; Pan via drag or horizontal wheel
   const onWheelNative = useCallback((e) => {
     if (!waveWrapRef.current || !wsRef.current || !duration) return;
@@ -579,42 +614,109 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => {
     const el = waveWrapRef.current; if (!el) return;
-    // Add non-passive wheel/gesture handlers to prevent page zoom/scroll
+    // Keep our wheel handler to avoid page zoom and to drive ws.zoom for plugin sync
     el.addEventListener('wheel', onWheelNative, { passive: false });
+    // Also block Safari page-zoom while letting our zoom logic run
     const prevent = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
     el.addEventListener('gesturestart', prevent, { passive: false });
     el.addEventListener('gesturechange', prevent, { passive: false });
+    el.addEventListener('gestureend', prevent, { passive: false });
     el.style.overscrollBehavior = 'contain';
     return () => {
       el.removeEventListener('wheel', onWheelNative);
       el.removeEventListener('gesturestart', prevent);
       el.removeEventListener('gesturechange', prevent);
+      el.removeEventListener('gestureend', prevent);
     };
   }, [onWheelNative]);
 
   const downXRef = useRef(0);
   const movedRef = useRef(false);
-  function onMouseDown(e){ isDraggingRef.current = true; downXRef.current = lastXRef.current = e.clientX; movedRef.current = false; }
+  const [selectionRef, setSelectionRef] = useState(null);
+  const [shiftPressed, setShiftPressed] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e) => setShiftPressed(e.shiftKey);
+    const onKeyUp = (e) => setShiftPressed(e.shiftKey);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
+  }, []);
+
+  function onMouseDown(e){
+    if (shiftPressed) {
+      const wrapper = waveWrapRef.current; if (!wrapper) return;
+      const rect = wrapper.getBoundingClientRect();
+      const xAbs = e.clientX - rect.left + wrapper.scrollLeft;
+      const startSec = xAbs / (pxPerSec || 1);
+      setSelectionRef({ startX: xAbs, startSec, currentX: xAbs, currentSec: startSec });
+    } else {
+      isDraggingRef.current = true; downXRef.current = lastXRef.current = e.clientX; movedRef.current = false;
+    }
+  }
   function onMouseMove(e){
-    if (!isDraggingRef.current) return;
     const wrapper = waveWrapRef.current; if (!wrapper) return;
+    if (selectionRef && shiftPressed) {
+      const rect = wrapper.getBoundingClientRect();
+      const xAbs = e.clientX - rect.left + wrapper.scrollLeft;
+      setSelectionRef(prev => ({ ...prev, currentX: xAbs, currentSec: xAbs / (pxPerSec || 1) }));
+      return;
+    }
+    if (!isDraggingRef.current) return;
     const dx = e.clientX - lastXRef.current; lastXRef.current = e.clientX;
     const rect = wrapper.getBoundingClientRect();
-    const pps = pxPerSec;
+    const pps = pxPerSec || 1;
     const maxScroll = Math.max(0, pps * duration - rect.width);
     if (Math.abs(e.clientX - downXRef.current) > 3) movedRef.current = true;
-    wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, wrapper.scrollLeft - dx)); // drag to pan with bounds
+    wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, wrapper.scrollLeft - dx));
   }
   function onMouseUp(e){
     const wrapper = waveWrapRef.current; if (!wrapper) { isDraggingRef.current = false; return; }
-    // Click-to-seek if not dragging
-    if (!movedRef.current && duration) {
+    if (selectionRef && shiftPressed) {
       const rect = wrapper.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const sec = Math.max(0, Math.min(duration, (wrapper.scrollLeft + x) / pxPerSec));
-      if (audioRef.current) audioRef.current.currentTime = sec;
+      const startX = Math.min(selectionRef.startX, selectionRef.currentX);
+      const endX = Math.max(selectionRef.startX, selectionRef.currentX);
+      if (endX - startX < 10) {
+        const x = e.clientX - rect.left + wrapper.scrollLeft;
+        const sec = Math.max(0, Math.min(duration, x / (pxPerSec || 1)));
+        if (audioRef.current) audioRef.current.currentTime = sec;
+      } else {
+        const pps0 = pxPerSec || 1;
+        const sSec = Math.max(0, Math.min(duration, startX / pps0));
+        const eSec = Math.max(0, Math.min(duration, endX / pps0));
+        const newZoomSec = Math.max(1e-6, eSec - sSec);
+        const rectW = rect.width;
+        const newPxPerSec = (rectW + 2) / newZoomSec;
+        wsRef.current?.zoom(newPxPerSec);
+        setPxPerSec(newPxPerSec);
+        const centerSec = (sSec + eSec) / 2;
+        if (audioRef.current) audioRef.current.currentTime = centerSec;
+        requestAnimationFrame(() => {
+          const pps = pxPerSec || newPxPerSec;
+          const contentWidth = wrapper.scrollWidth || 0;
+          const maxScroll = Math.max(0, contentWidth - rectW);
+          const newScrollLeft = Math.max(0, centerSec * (pps) - rectW / 2);
+          wrapper.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
+        });
+      }
+      setSelectionRef(null);
+    } else {
+      // Click-to-seek if not dragging
+      if (!movedRef.current && duration) {
+        const rect = wrapper.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const sec = Math.max(0, Math.min(duration, (wrapper.scrollLeft + x) / (pxPerSec || 1)));
+        if (audioRef.current) audioRef.current.currentTime = sec;
+      }
     }
     isDraggingRef.current = false;
+  }
+
+  function onTouchStart(e){
+    if (e.touches && e.touches.length === 2) {
+      pinchRef.current.startDist = 0;
+      pinchRef.current.startPx = pxPerSec || 1;
+      pinchRef.current.startScroll = waveWrapRef.current?.scrollLeft || 0;
+    }
   }
 
   // Pinch zoom with two pointers
@@ -651,80 +753,25 @@ export default function AnalysisDetail({ params }) {
       if (pinchRef.current.startDist === 0) {
         pinchRef.current.startDist = dist;
         pinchRef.current.startScroll = waveWrapRef.current.scrollLeft;
-        pinchRef.current.startPx = pxPerSec;
+        pinchRef.current.startPx = pxPerSec || 1;
       } else {
         const scale = dist / pinchRef.current.startDist;
         const centerX = (t1.clientX + t2.clientX) / 2 - rect.left;
         const frac = Math.max(0, Math.min(1, centerX / rect.width));
-        const pivotSec = (waveWrapRef.current.scrollLeft + centerX) / pxPerSec;
+        const pivotSec = (waveWrapRef.current.scrollLeft + centerX) / (pxPerSec || 1);
         const minPx = duration > 0 ? (rect.width / duration) : 10;
-        const next = Math.max(minPx, Math.min(5000, pinchRef.current.startPx * scale));
+        const next = Math.max(minPx, Math.min(5000, (pinchRef.current.startPx || 1) * scale));
         setPxPerSec(next);
         wsRef.current.zoom(next);
         const newScrollLeft = Math.max(0, pivotSec * next - frac * rect.width);
         const maxScroll = Math.max(0, next * duration - rect.width);
-        waveWrapRef.current.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft));
+        requestAnimationFrame(() => { waveWrapRef.current.scrollLeft = Math.max(0, Math.min(maxScroll, newScrollLeft)); });
       }
     }
   }
   function onTouchEnd(){ pinchRef.current.startDist = 0; }
 
-  // Time ruler (strictly synced to waveform zoom/pan/playback)
-  useEffect(() => {
-    let raf = 0; let running = true;
-    const draw = () => {
-      if (!running) return;
-      const c = rulerRef.current; const wrap = waveWrapRef.current; if (!c || !wrap || !wsRef.current) { raf = requestAnimationFrame(draw); return; }
-      const ctx = c.getContext('2d');
-      const w = wrap.clientWidth; const h = 26; if (w <= 0) { raf = requestAnimationFrame(draw); return; }
-      if (c.width !== Math.floor(w * devicePixelRatio) || c.height !== Math.floor(h * devicePixelRatio)) {
-        c.width = w * devicePixelRatio; c.height = h * devicePixelRatio; c.style.height = h + 'px';
-      }
-      ctx.setTransform(1,0,0,1,0,0);
-      ctx.scale(devicePixelRatio, devicePixelRatio);
-      ctx.clearRect(0,0,w,h);
-      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,w,h);
-      ctx.strokeStyle = '#e5e7eb'; ctx.beginPath(); ctx.moveTo(0, h-0.5); ctx.lineTo(w, h-0.5); ctx.stroke();
-      const pps = pxPerSec > 0 ? pxPerSec : (wsRef.current?.options?.minPxPerSec || 100);
-      const scroll = wrap.scrollLeft || 0;
-      const startSec = scroll / pps;
-      const viewSec = w / pps;
-      const endSec = Math.min(duration || 0, startSec + viewSec);
-      // Choose tick spacing for ~60px per tick
-      const steps = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,30,60];
-      let step = 1; for (const s of steps) { if (s * pps >= 60) { step = s; break; } }
-      const first = Math.floor(startSec / step) * step;
-      ctx.fillStyle = '#64748b'; ctx.font = '12px system-ui, -apple-system, Segoe UI, sans-serif';
-      for (let t = first; t <= endSec + 1e-9; t += step) {
-        const x = Math.round((t - startSec) * pps) + 0.5;
-        const majorEvery = 5;
-        const isMajor = (Math.round(t / step) % majorEvery) === 0;
-        const tick = isMajor ? 10 : 6;
-        ctx.strokeStyle = '#cbd5e1'; ctx.beginPath(); ctx.moveTo(x, h-1); ctx.lineTo(x, h-1-tick); ctx.stroke();
-        if (isMajor) {
-          const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
-          const label = Math.max(0, Math.min(duration || 0, t)).toFixed(decimals);
-          ctx.fillText(label + 's', x + 2, 12);
-        }
-      }
-      // Playhead marker
-      const a = audioRef.current; if (a) {
-        const playX = (Math.max(0, Math.min(duration || 0, a.currentTime)) - startSec) * pps;
-        ctx.strokeStyle = '#ef4444'; ctx.beginPath(); ctx.moveTo(playX+0.5, 0); ctx.lineTo(playX+0.5, h); ctx.stroke();
-      }
-      // Total duration label when fully in view
-      if ((duration || 0) > 0 && viewSec >= (duration || 0) - 1e-6) {
-        const decimals = viewSec < 1 ? 2 : viewSec < 10 ? 1 : 0;
-        const text = (duration || 0).toFixed(decimals) + 's';
-        const tw = ctx.measureText(text).width;
-        ctx.fillStyle = '#334155';
-        ctx.fillText(text, Math.max(0, w - tw - 4), 12);
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => { running = false; if (raf) cancelAnimationFrame(raf); };
-  }, [pxPerSec, duration]);
+  // Timeline is rendered by WaveSurfer TimelinePlugin
 
   if (!token) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
@@ -803,32 +850,51 @@ export default function AnalysisDetail({ params }) {
           {audioError}
         </div>
       ) : (
-        <div
-          ref={waveWrapRef}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onFocus={()=>setWaveFocused(true)}
-          onBlur={()=>setWaveFocused(false)}
-          onKeyDown={(e)=>{
-            if (!waveFocused) return;
-            if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
-              e.preventDefault(); e.stopPropagation();
-              const a = audioRef.current; if (!a) return;
-              if (a.paused) { a.play?.(); } else { a.pause?.(); }
-            }
-          }}
-          tabIndex={0}
-          role="region"
-          aria-label="waveform"
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-          style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
-        />
+        <div style={{ position:'relative' }}>
+          <div
+            ref={waveWrapRef}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={onMouseUp}
+            onTouchStart={onTouchStart}
+            onFocus={()=>setWaveFocused(true)}
+            onBlur={()=>setWaveFocused(false)}
+            onKeyDown={(e)=>{
+              if (!waveFocused) return;
+              if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault(); e.stopPropagation();
+                const a = audioRef.current; if (!a) return;
+                if (a.paused) { a.play?.(); } else { a.pause?.(); }
+              }
+            }}
+            tabIndex={0}
+            role="region"
+            aria-label="waveform"
+            onTouchMove={onTouchMove}
+            onTouchEnd={()=>{ pinchRef.current.startDist = 0; }}
+            style={{ position:'relative', userSelect:'none', background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflowX:'auto', overflowY:'hidden', touchAction:'none' }}
+          />
+          {selectionRef && shiftPressed && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: Math.min(selectionRef.startX, selectionRef.currentX) - (waveWrapRef.current?.scrollLeft || 0),
+              width: Math.abs(selectionRef.currentX - selectionRef.startX),
+              height: '100%',
+              backgroundColor: 'rgba(37, 99, 235, 0.1)',
+              border: '1px solid rgba(37, 99, 235, 0.3)',
+              pointerEvents: 'none',
+              borderRadius: '4px',
+              zIndex: 10
+            }} />
+          )}
+          {/* Red time label near playhead */}
+          <div ref={playLabelRef} style={{ position:'absolute', top: 6, transform:'translateX(-50%)', padding:'2px 6px', fontSize:12, color:'#ef4444', background:'rgba(255,255,255,0.9)', border:'1px solid #fecaca', borderRadius:6, pointerEvents:'none' }} />
+        </div>
       )}
 
-      {/* Time ruler under waveform */}
-      <canvas ref={rulerRef} style={{ width:'100%' }} />
+      {/* Timeline under waveform */}
+      <div ref={timelineRef} style={{ width:'100%', height: 26, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, borderTopLeftRadius:0, borderTopRightRadius:0, borderTop:'none' }} />
 
       {audioUrl && (
         <audio ref={audioRef} controls src={audioUrl} style={{ marginTop: 8, width:'100%' }} />

@@ -270,7 +270,7 @@ app.post('/password/reset', async (req, res) => {
   }
 });
 
-// Send verification email (for logged-in user)
+// Send verification email/code (for logged-in user)
 app.post('/email/send_verification', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -278,9 +278,19 @@ app.post('/email/send_verification', async (req, res) => {
     const token = auth.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
     const userId = payload.sub;
-    const verifToken = crypto.randomBytes(24).toString('base64url');
-    const expiresAt = new Date(Date.now() + 24 * 3600 * 1000);
-    await pool.query('INSERT INTO email_tokens (user_id, token, purpose, expires_at) VALUES ($1,$2,$3,$4)', [userId, verifToken, 'verify', expiresAt]);
+    // Generate a 6-digit code (OTP). Keep regeneration on unique conflict.
+    let verifToken = null; let attempts = 0; let ok = false; const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    while (!ok && attempts < 5) {
+      attempts++;
+      verifToken = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        await pool.query('INSERT INTO email_tokens (user_id, token, purpose, expires_at) VALUES ($1,$2,$3,$4)', [userId, verifToken, 'verify', expiresAt]);
+        ok = true;
+      } catch (e) {
+        if (e.code !== '23505') throw e; // duplicate token; retry
+      }
+    }
+    if (!ok) return res.status(500).json({ error: 'could not generate code' });
     const dev = process.env.NODE_ENV !== 'production';
     res.json({ ok: true, devToken: dev ? verifToken : undefined });
   } catch (e) {
@@ -294,7 +304,15 @@ app.post('/email/verify', async (req, res) => {
   try {
     const { token } = req.body || {};
     if (!token) return res.status(400).json({ error: 'missing token' });
-    const { rows } = await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1', [token]);
+    const auth = req.headers.authorization || '';
+    let rows;
+    if (auth.startsWith('Bearer ')) {
+      const jwtTok = auth.slice(7);
+      const payload = jwt.verify(jwtTok, JWT_SECRET);
+      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1 AND user_id=$2', [token, payload.sub])).rows;
+    } else {
+      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1', [token])).rows;
+    }
     if (!rows.length) return res.status(400).json({ error: 'invalid token' });
     const tok = rows[0];
     if (tok.purpose !== 'verify') return res.status(400).json({ error: 'invalid token' });

@@ -4,6 +4,11 @@ import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import pkg from 'pg';
+import crypto from 'crypto';
+import dotenv from 'dotenv';
+import { Resend } from 'resend';
+
+dotenv.config();
 
 const { Pool } = pkg;
 
@@ -11,6 +16,38 @@ const PORT = process.env.PORT || 4001;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_me';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const resendClient = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+function buildFrom(raw){
+  const fallback = 'VisualHealth <onboarding@resend.dev>';
+  const v = (raw||'').trim(); if (!v) return fallback;
+  if (/[<].+@.+[>]/.test(v)) return v; // already Name <email>
+  const m1 = v.match(/^(.*?)\s*\(([^)]+@[^)]+)\)\s*$/); // Name (email)
+  if (m1) { const name=(m1[1]||'VisualHealth').trim()||'VisualHealth'; const em=m1[2].trim(); return `${name} <${em}>`; }
+  const m2 = v.match(/^(.*?)\s*([^\s<>]+@[^\s<>]+)$/); // Name email
+  if (m2) { const name=(m2[1]||'VisualHealth').trim()||'VisualHealth'; const em=m2[2].trim(); return `${name} <${em}>`; }
+  if (/^[^\s<>]+@[^\s<>]+$/.test(v)) return `VisualHealth <${v}>`;
+  return fallback;
+}
+const EMAIL_FROM = buildFrom(process.env.EMAIL_FROM);
+
+function sha256(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
+function generate6Code(){ return String(Math.floor(100000 + Math.random() * 900000)); }
+async function sendCodeEmail(to, code){
+  if (!resendClient) return; // skip silently if not configured
+  try {
+    await resendClient.emails.send({
+      from: EMAIL_FROM,
+      to,
+      subject: 'Your verification code',
+      html: `<p>Your VisualHealth verification code is <b style="font-size:18px">${code}</b>.</p><p>It expires in 10 minutes. If you didn’t request this, you can ignore this email.</p>`
+    });
+    console.log('sent verification code to', to);
+  } catch (e) {
+    // Log but do not break user flow
+    console.error('send email failed', e?.message || e);
+  }
+}
 
 async function init() {
   await pool.query(`
@@ -37,6 +74,18 @@ async function init() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+    
+    CREATE TABLE IF NOT EXISTS email_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS email_tokens_user_idx ON email_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS email_tokens_purpose_idx ON email_tokens(purpose);
   `);
 }
 
@@ -55,6 +104,8 @@ app.post('/signup', async (req, res) => {
   try {
     const { email, password, displayName } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email and password required' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'invalid email' });
+    if (String(password).length < 6) return res.status(400).json({ error: 'password too short' });
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const { rows } = await pool.query(
       'INSERT INTO users (email, password_hash, display_name) VALUES ($1, $2, $3) RETURNING id, email, display_name',
@@ -74,6 +125,7 @@ app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email and password required' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'invalid email' });
     const { rows } = await pool.query('SELECT id, email, password_hash, display_name FROM users WHERE email=$1', [email.toLowerCase()]);
     if (!rows.length) return res.status(401).json({ error: 'invalid credentials' });
     const user = rows[0];
@@ -207,6 +259,121 @@ app.post('/me/password', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: 'password change failed' });
+  }
+});
+
+// Start password reset by email
+app.post('/password/forgot', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').toLowerCase();
+    // Always respond ok to avoid user enumeration
+    const { rows } = await pool.query('SELECT id FROM users WHERE email=$1', [email]);
+    if (rows.length) {
+      const userId = rows[0].id;
+      const token = crypto.randomBytes(24).toString('base64url');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1h
+      await pool.query('INSERT INTO email_tokens (user_id, token, purpose, expires_at) VALUES ($1,$2,$3,$4)', [userId, token, 'reset', expiresAt]);
+      // In dev, expose token to help local testing; in prod integrate mailer
+      const dev = process.env.NODE_ENV !== 'production';
+      return res.json({ ok: true, devToken: dev ? token : undefined });
+    }
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'forgot failed' });
+  }
+});
+
+// Complete password reset
+app.post('/password/reset', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body || {};
+    if (!token || !newPassword) return res.status(400).json({ error: 'missing fields' });
+    if (String(newPassword).length < 6) return res.status(400).json({ error: 'password too short' });
+    const { rows } = await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1', [token]);
+    if (!rows.length) return res.status(400).json({ error: 'invalid token' });
+    const tok = rows[0];
+    if (tok.purpose !== 'reset') return res.status(400).json({ error: 'invalid token' });
+    if (tok.used_at) return res.status(400).json({ error: 'token used' });
+    if (new Date(tok.expires_at).getTime() < Date.now()) return res.status(400).json({ error: 'token expired' });
+    const hash = await bcrypt.hash(String(newPassword), BCRYPT_ROUNDS);
+    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hash, tok.user_id]);
+    await pool.query('UPDATE email_tokens SET used_at=now() WHERE id=$1', [tok.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'reset failed' });
+  }
+});
+
+// Send verification email/code (for logged-in user)
+app.post('/email/send_verification', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'missing token' });
+    const token = auth.slice(7);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const userId = payload.sub;
+    // Fetch email
+    const ue = await pool.query('SELECT email FROM users WHERE id=$1', [userId]);
+    if (!ue.rows.length) return res.status(404).json({ error: 'not found' });
+    const email = ue.rows[0].email;
+    // Rate limit: 60s cooldown and 10/hour
+    const rl = await pool.query(
+      `SELECT EXTRACT(EPOCH FROM (now() - MAX(created_at))) AS since_last,
+              COUNT(*) FILTER (WHERE created_at > now() - interval '1 hour') AS hour_count
+         FROM email_tokens WHERE user_id=$1 AND purpose='verify'`,
+      [userId]
+    );
+    const rawSince = rl.rows[0]?.since_last;
+    const sinceLast = (rawSince === null || rawSince === undefined) ? Infinity : Number(rawSince);
+    const hourCount = Number(rl.rows[0]?.hour_count ?? 0);
+    if (sinceLast !== Infinity && !Number.isNaN(sinceLast) && sinceLast < 60) {
+      const retrySec = Math.max(1, Math.ceil(60 - sinceLast));
+      return res.status(429).json({ error: 'cooldown', retrySec });
+    }
+    if (hourCount >= 10) return res.status(429).json({ error: 'rate_limited' });
+    // Generate and store hashed token
+    const code = generate6Code();
+    const hashed = sha256(code);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await pool.query('INSERT INTO email_tokens (user_id, token, purpose, expires_at) VALUES ($1,$2,$3,$4)', [userId, hashed, 'verify', expiresAt]);
+    // Send real email (best-effort)
+    await sendCodeEmail(email, code);
+    const dev = process.env.NODE_ENV !== 'production';
+    res.json({ ok: true, devToken: dev ? code : undefined });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'send verification failed' });
+  }
+});
+
+// Verify email using token (link-like)
+app.post('/email/verify', async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ error: 'missing token' });
+    const auth = req.headers.authorization || '';
+    const hashed = sha256(token);
+    let rows;
+    if (auth.startsWith('Bearer ')) {
+      const jwtTok = auth.slice(7);
+      const payload = jwt.verify(jwtTok, JWT_SECRET);
+      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1 AND user_id=$2', [hashed, payload.sub])).rows;
+    } else {
+      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1', [hashed])).rows;
+    }
+    if (!rows.length) return res.status(400).json({ error: 'invalid token' });
+    const tok = rows[0];
+    if (tok.purpose !== 'verify') return res.status(400).json({ error: 'invalid token' });
+    if (tok.used_at) return res.status(400).json({ error: 'token used' });
+    if (new Date(tok.expires_at).getTime() < Date.now()) return res.status(400).json({ error: 'token expired' });
+    await pool.query('UPDATE users SET email_verified_at=now() WHERE id=$1', [tok.user_id]);
+    await pool.query('UPDATE email_tokens SET used_at=now() WHERE id=$1', [tok.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'verify failed' });
   }
 });
 

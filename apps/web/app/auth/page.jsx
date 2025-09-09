@@ -1,39 +1,92 @@
 "use client";
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useI18n } from '../../components/i18n';
+
+const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
 
 export default function AuthPage() {
   const { t } = useI18n();
+  const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [mode, setMode] = useState('login');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [ok, setOk] = useState('');
+  const [devToken, setDevToken] = useState('');
 
-  async function submit() {
-    const url = (process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001') + (mode === 'login' ? '/login' : '/signup');
-    const body = { email, password };
-    if (mode === 'signup') body.displayName = displayName;
-    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const json = await resp.json();
-    if (json.token) {
-      localStorage.setItem('vh_token', json.token);
-      window.location.href = '/';
-    } else {
-      alert(json.error || 'failed');
-    }
+  const emailValid = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), [email]);
+  const passwordValid = useMemo(() => String(password).length >= 6, [password]);
+  const canSubmit = useMemo(() => {
+    if (mode === 'login') return emailValid && passwordValid;
+    if (mode === 'signup') return emailValid && passwordValid && (!displayName || displayName.trim().length >= 2);
+    if (mode === 'forgot') return emailValid;
+    return false;
+  }, [mode, emailValid, passwordValid, displayName]);
+
+  async function onSubmit(e){
+    e?.preventDefault?.(); if (busy || !canSubmit) return;
+    setBusy(true); setErr(''); setOk(''); setDevToken('');
+    try {
+      if (mode === 'login' || mode === 'signup') {
+        const url = AUTH_BASE + (mode === 'login' ? '/login' : '/signup');
+        const body = { email, password };
+        if (mode === 'signup' && displayName) body.displayName = displayName.trim();
+        const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const json = await resp.json(); if (!resp.ok || json?.error) throw new Error(json?.error || 'failed');
+        if (json.token) { localStorage.setItem('vh_token', json.token); window.location.href = '/onboarding'; return; }
+      } else if (mode === 'forgot') {
+        const resp = await fetch(AUTH_BASE + '/password/forgot', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email }) });
+        const j = await resp.json(); if (!resp.ok || j?.error) throw new Error(j?.error || 'failed');
+        setOk(t('ResetEmailSent'));
+        if (j?.devToken) setDevToken(j.devToken);
+      }
+    } catch (e) {
+      setErr(e?.message || 'failed');
+    } finally { setBusy(false); }
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '24px auto', padding: '0 24px' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 12 }}>{mode === 'login' ? t('LoginTitle') : t('SignupTitle')}</h1>
-      <div style={{ display: 'grid', gap: 12 }}>
-        <input placeholder={t('Email')} value={email} onChange={e => setEmail(e.target.value)} />
-        <input type="password" placeholder={t('Password')} value={password} onChange={e => setPassword(e.target.value)} />
-        {mode === 'signup' && <input placeholder={t('DisplayName')} value={displayName} onChange={e => setDisplayName(e.target.value)} />}
-        <button onClick={submit} className="vh-btn vh-btn-primary">{mode === 'login' ? t('Login') : t('CreateAccount')}</button>
-        <button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')} style={{ background: 'transparent', border: 'none', color: '#2563eb' }}>
-          {mode === 'login' ? t('NoAccount') : t('HaveAccount')}
-        </button>
+    <div style={{ maxWidth: 460, margin: '24px auto', padding: '0 24px' }}>
+      <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+        <button onClick={()=>{ setMode('login'); setErr(''); setOk(''); }} className={mode==='login'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('LoginTitle')}</button>
+        <button onClick={()=>{ setMode('signup'); setErr(''); setOk(''); }} className={mode==='signup'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('SignupTitle')}</button>
+      </div>
+      <form onSubmit={onSubmit} style={{ display:'grid', gap:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+        <div style={{ fontSize:22, fontWeight:600 }}>{mode==='login'? t('LoginTitle') : mode==='signup'? t('SignupTitle') : t('ForgotPassword')}</div>
+        {(mode==='login'||mode==='signup'||mode==='forgot') && (
+          <>
+            <input name="email" type="email" placeholder={t('Email')} value={email} onChange={e=>setEmail(e.target.value)} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+            {!emailValid && email && <div style={{ color:'#b91c1c', fontSize:12 }}>{t('InvalidEmail')}</div>}
+          </>
+        )}
+        {(mode==='login'||mode==='signup') && (
+          <>
+            <input name="password" type="password" placeholder={t('Password')} value={password} onChange={e=>setPassword(e.target.value)} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+            {!passwordValid && password && <div style={{ color:'#b91c1c', fontSize:12 }}>{t('PasswordMin')}</div>}
+          </>
+        )}
+        {mode==='signup' && (
+          <input name="displayName" placeholder={t('DisplayName')} value={displayName} onChange={e=>setDisplayName(e.target.value)} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+        )}
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button type="submit" disabled={!canSubmit || busy} className="vh-btn vh-btn-primary">
+            {mode==='login'? t('Login') : mode==='signup' ? t('CreateAccount') : t('SendResetEmail')}
+          </button>
+          {mode==='login' && (
+            <button type="button" onClick={()=> setMode('forgot')} className="vh-btn vh-btn-link">{t('ForgotPassword')}?</button>
+          )}
+        </div>
+        {err && <div style={{ color:'#b91c1c' }}>{err}</div>}
+        {ok && <div style={{ color:'#166534' }}>{ok} {devToken && (<><span style={{ color:'#334155' }}>DEV token:</span> <code>{devToken}</code> <Link href={`/auth/reset?token=${encodeURIComponent(devToken)}`} style={{ color:'#2563eb' }}>{t('OpenReset')}</Link></>)}</div>}
+        {mode==='signup' && (
+          <div style={{ fontSize:12, color:'#64748b' }}>{t('SignupEmailHint')}</div>
+        )}
+      </form>
+      <div style={{ marginTop:10, fontSize:12, color:'#64748b' }}>
+        <span>{mode==='login' ? t('NoAccount') : t('HaveAccount')}</span>
+        <button onClick={()=> setMode(mode==='login'?'signup':'login')} className="vh-btn vh-btn-link">{mode==='login' ? t('SignupTitle') : t('LoginTitle')}</button>
       </div>
     </div>
   );

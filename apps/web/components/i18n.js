@@ -100,6 +100,7 @@ export const dict = {
     PasswordsDontMatch: 'Passwords do not match',
     PasswordResetOk: 'Password reset. You can login now.',
     EmailVerifiedOk: 'Email verified!',
+    PleaseVerifyEmailFirst: 'Please verify email first',
     NoAccount: 'No account? Sign up',
     HaveAccount: 'Have an account? Login',
     // Analysis list/detail
@@ -295,6 +296,7 @@ export const dict = {
     PasswordsDontMatch: '两次输入的密码不一致',
     PasswordResetOk: '密码已重置，可以登录了。',
     EmailVerifiedOk: '邮箱已验证！',
+    PleaseVerifyEmailFirst: '请先完成邮箱验证',
     NoAccount: '没有账号？去注册',
     HaveAccount: '已有账号？去登录',
     // Analysis list/detail

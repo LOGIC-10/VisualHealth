@@ -15,6 +15,14 @@ export default function Onboarding(){
   const [ok, setOk] = useState('');
   const [devToken, setDevToken] = useState('');
 
+  async function readJson(resp){
+    const ct = resp.headers.get('content-type') || '';
+    if (ct.includes('application/json')) return await resp.json();
+    const text = await resp.text();
+    const snippet = text.slice(0, 180).replace(/\s+/g, ' ').trim();
+    throw new Error(`${resp.status} ${resp.statusText}: ${snippet || 'non-json response'}`);
+  }
+
   // Fields
   const [displayName, setDisplayName] = useState('');
   const [birthDate, setBirthDate] = useState('');
@@ -60,8 +68,8 @@ export default function Onboarding(){
               <div style={{ color:'#64748b' }}>{t('CodeSentHint')||'We have sent a 6-digit verification code to your email. Enter it below to continue.'}</div>
               <form onSubmit={async(e)=>{ e.preventDefault(); if (busy) return; const code = e.currentTarget.elements.code?.value?.trim(); if (!code) return; setBusy(true); setErr(''); setOk('');
                 try {
-                  const resp = await fetch(AUTH_BASE + '/email/verify', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ token: code }) });
-                  const j = await resp.json(); if (!resp.ok || j?.error) throw new Error(j?.error||'verify failed');
+                  const resp = await fetch(AUTH_BASE + '/email/verify', { method:'POST', headers:{ 'Content-Type':'application/json', 'Accept':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ token: code }) });
+                  const j = await readJson(resp); if (!resp.ok || j?.error) throw new Error(j?.error||'verify failed');
                   setOk(t('EmailVerifiedOk'));
                   // refresh user to reflect verified status
                   const r2 = await fetch(AUTH_BASE + '/me', { headers: { Authorization:`Bearer ${token}` } }); const u2 = await r2.json(); if (r2.ok) setMe(u2);
@@ -74,8 +82,8 @@ export default function Onboarding(){
                 <button disabled={busy} className="vh-btn vh-btn-link" onClick={async()=>{
                   setErr(''); setOk(''); setDevToken(''); setBusy(true);
                   try {
-                    const resp = await fetch(AUTH_BASE + '/email/send_verification', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` } });
-                    const j = await resp.json(); if (!resp.ok || j?.error) throw new Error(j?.error || 'send failed');
+                    const resp = await fetch(AUTH_BASE + '/email/send_verification', { method:'POST', headers:{ 'Content-Type':'application/json', 'Accept':'application/json', Authorization:`Bearer ${token}` } });
+                    const j = await readJson(resp); if (!resp.ok || j?.error) throw new Error(j?.error || 'send failed');
                     setOk(t('VerificationEmailSent'));
                     if (j?.devToken) setDevToken(j.devToken);
                   } catch(e){ setErr(e?.message || 'send failed'); } finally { setBusy(false); }
@@ -153,6 +161,7 @@ export default function Onboarding(){
 
   async function saveStep(){
     if (!token) return;
+    if (step === 0 && !me?.email_verified_at) { setErr(t('PleaseVerifyEmailFirst')||'Please verify email first'); return; }
     setBusy(true); setErr(''); setOk('');
     try {
       const body = {};

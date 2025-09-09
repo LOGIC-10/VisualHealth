@@ -78,8 +78,6 @@ export default function Onboarding(){
               }} style={{ display:'flex', gap:8, alignItems:'center' }}>
                 <input name="code" inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder={t('EnterCode')||'Enter code'} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
                 <button disabled={busy} className="vh-btn vh-btn-primary">{t('Verify')}</button>
-              </form>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <button
                   disabled={busy || cooldownSec>0}
                   className="vh-btn vh-btn-outline"
@@ -102,8 +100,8 @@ export default function Onboarding(){
                 }}>
                   {cooldownSec>0 ? `${t('ResendCode')||'Resend code'} (${cooldownSec}s)` : (t('ResendCode')||'Resend code')}
                 </button>
-                {devToken && <span style={{ color:'#334155' }}>DEV code: <code>{devToken}</code></span>}
-              </div>
+                {devToken && <span style={{ color:'#334155', fontSize:12 }}>DEV: <code>{devToken}</code></span>}
+              </form>
             </>
           )}
           {ok && <div style={{ color:'#166534' }}>{ok}</div>}

@@ -18,7 +18,18 @@ const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const resendClient = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const EMAIL_FROM = process.env.EMAIL_FROM || 'VisualHealth <onboarding@resend.dev>';
+function buildFrom(raw){
+  const fallback = 'VisualHealth <onboarding@resend.dev>';
+  const v = (raw||'').trim(); if (!v) return fallback;
+  if (/[<].+@.+[>]/.test(v)) return v; // already Name <email>
+  const m1 = v.match(/^(.*?)\s*\(([^)]+@[^)]+)\)\s*$/); // Name (email)
+  if (m1) { const name=(m1[1]||'VisualHealth').trim()||'VisualHealth'; const em=m1[2].trim(); return `${name} <${em}>`; }
+  const m2 = v.match(/^(.*?)\s*([^\s<>]+@[^\s<>]+)$/); // Name email
+  if (m2) { const name=(m2[1]||'VisualHealth').trim()||'VisualHealth'; const em=m2[2].trim(); return `${name} <${em}>`; }
+  if (/^[^\s<>]+@[^\s<>]+$/.test(v)) return `VisualHealth <${v}>`;
+  return fallback;
+}
+const EMAIL_FROM = buildFrom(process.env.EMAIL_FROM);
 
 function sha256(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
 function generate6Code(){ return String(Math.floor(100000 + Math.random() * 900000)); }
@@ -31,6 +42,7 @@ async function sendCodeEmail(to, code){
       subject: 'Your verification code',
       html: `<p>Your VisualHealth verification code is <b style="font-size:18px">${code}</b>.</p><p>It expires in 10 minutes. If you didn’t request this, you can ignore this email.</p>`
     });
+    console.log('sent verification code to', to);
   } catch (e) {
     // Log but do not break user flow
     console.error('send email failed', e?.message || e);
@@ -313,9 +325,10 @@ app.post('/email/send_verification', async (req, res) => {
          FROM email_tokens WHERE user_id=$1 AND purpose='verify'`,
       [userId]
     );
-    const sinceLast = Number(rl.rows[0]?.since_last ?? null);
+    const rawSince = rl.rows[0]?.since_last;
+    const sinceLast = (rawSince === null || rawSince === undefined) ? Infinity : Number(rawSince);
     const hourCount = Number(rl.rows[0]?.hour_count ?? 0);
-    if (!Number.isNaN(sinceLast) && sinceLast < 60) {
+    if (sinceLast !== Infinity && !Number.isNaN(sinceLast) && sinceLast < 60) {
       const retrySec = Math.max(1, Math.ceil(60 - sinceLast));
       return res.status(429).json({ error: 'cooldown', retrySec });
     }

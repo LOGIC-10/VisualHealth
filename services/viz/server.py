@@ -247,6 +247,22 @@ async def pcg_advanced(
     if n == 0 or sr <= 0:
         return JSONResponse({"error": "empty"}, status_code=400)
 
+    # Optional decimation for performance: downsample to ~2000 Hz max
+    # PCG metrics here mostly rely on bands < 600 Hz and envelope timing
+    # This simple decimator (box filter + pick every k-th sample) avoids SciPy dependency
+    target_sr = 2000
+    if sr > target_sr:
+        k = max(1, int(round(sr / target_sr)))
+        if k > 1:
+            # box filter to mitigate aliasing
+            win = min(len(y), k)
+            if win > 1:
+                box = np.ones(win, dtype=np.float32) / float(win)
+                y = np.convolve(y, box, mode='same').astype(np.float32)
+            y = y[::k]
+            sr = int(round(sr / k))
+            n = len(y)
+
     dur = n / sr
     # Envelope
     env = _moving_average(y, max(1, int(0.05 * sr)))

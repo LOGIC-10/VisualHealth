@@ -79,8 +79,11 @@ export default function Onboarding(){
                 <input name="code" inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder={t('EnterCode')||'Enter code'} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
                 <button disabled={busy} className="vh-btn vh-btn-primary">{t('Verify')}</button>
               </form>
-              <div style={{ fontSize:12, color:'#64748b' }}>
-                <button disabled={busy || cooldownSec>0} className="vh-btn vh-btn-link" onClick={async()=>{
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <button
+                  disabled={busy || cooldownSec>0}
+                  className="vh-btn vh-btn-outline"
+                  onClick={async()=>{
                   setErr(''); setOk(''); setDevToken(''); setBusy(true);
                   try {
                     const resp = await fetch(AUTH_BASE + '/email/send_verification', { method:'POST', headers:{ 'Content-Type':'application/json', 'Accept':'application/json', Authorization:`Bearer ${token}` } });
@@ -96,9 +99,10 @@ export default function Onboarding(){
                       setCooldownSec(60);
                     }
                   } catch(e){ setErr(e?.message || 'send failed'); } finally { setBusy(false); }
-                }}>{t('ResendCode')||'Resend code'}</button>
-                {cooldownSec>0 && <span style={{ marginLeft:8 }}>{t('ResendIn')||'Resend in'} {cooldownSec}s</span>}
-                {devToken && <span style={{ marginLeft:8, color:'#334155' }}>DEV code: <code>{devToken}</code></span>}
+                }}>
+                  {cooldownSec>0 ? `${t('ResendCode')||'Resend code'} (${cooldownSec}s)` : (t('ResendCode')||'Resend code')}
+                </button>
+                {devToken && <span style={{ color:'#334155' }}>DEV code: <code>{devToken}</code></span>}
               </div>
             </>
           )}

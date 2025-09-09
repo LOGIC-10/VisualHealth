@@ -5,6 +5,10 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import pkg from 'pg';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+import { Resend } from 'resend';
+
+dotenv.config();
 
 const { Pool } = pkg;
 
@@ -12,6 +16,26 @@ const PORT = process.env.PORT || 4001;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_me';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const resendClient = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'VisualHealth <onboarding@resend.dev>';
+
+function sha256(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
+function generate6Code(){ return String(Math.floor(100000 + Math.random() * 900000)); }
+async function sendCodeEmail(to, code){
+  if (!resendClient) return; // skip silently if not configured
+  try {
+    await resendClient.emails.send({
+      from: EMAIL_FROM,
+      to,
+      subject: 'Your verification code',
+      html: `<p>Your VisualHealth verification code is <b style="font-size:18px">${code}</b>.</p><p>It expires in 10 minutes. If you didn’t request this, you can ignore this email.</p>`
+    });
+  } catch (e) {
+    // Log but do not break user flow
+    console.error('send email failed', e?.message || e);
+  }
+}
 
 async function init() {
   await pool.query(`
@@ -278,21 +302,33 @@ app.post('/email/send_verification', async (req, res) => {
     const token = auth.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
     const userId = payload.sub;
-    // Generate a 6-digit code (OTP). Keep regeneration on unique conflict.
-    let verifToken = null; let attempts = 0; let ok = false; const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    while (!ok && attempts < 5) {
-      attempts++;
-      verifToken = String(Math.floor(100000 + Math.random() * 900000));
-      try {
-        await pool.query('INSERT INTO email_tokens (user_id, token, purpose, expires_at) VALUES ($1,$2,$3,$4)', [userId, verifToken, 'verify', expiresAt]);
-        ok = true;
-      } catch (e) {
-        if (e.code !== '23505') throw e; // duplicate token; retry
-      }
+    // Fetch email
+    const ue = await pool.query('SELECT email FROM users WHERE id=$1', [userId]);
+    if (!ue.rows.length) return res.status(404).json({ error: 'not found' });
+    const email = ue.rows[0].email;
+    // Rate limit: 60s cooldown and 10/hour
+    const rl = await pool.query(
+      `SELECT EXTRACT(EPOCH FROM (now() - MAX(created_at))) AS since_last,
+              COUNT(*) FILTER (WHERE created_at > now() - interval '1 hour') AS hour_count
+         FROM email_tokens WHERE user_id=$1 AND purpose='verify'`,
+      [userId]
+    );
+    const sinceLast = Number(rl.rows[0]?.since_last ?? null);
+    const hourCount = Number(rl.rows[0]?.hour_count ?? 0);
+    if (!Number.isNaN(sinceLast) && sinceLast < 60) {
+      const retrySec = Math.max(1, Math.ceil(60 - sinceLast));
+      return res.status(429).json({ error: 'cooldown', retrySec });
     }
-    if (!ok) return res.status(500).json({ error: 'could not generate code' });
+    if (hourCount >= 10) return res.status(429).json({ error: 'rate_limited' });
+    // Generate and store hashed token
+    const code = generate6Code();
+    const hashed = sha256(code);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await pool.query('INSERT INTO email_tokens (user_id, token, purpose, expires_at) VALUES ($1,$2,$3,$4)', [userId, hashed, 'verify', expiresAt]);
+    // Send real email (best-effort)
+    await sendCodeEmail(email, code);
     const dev = process.env.NODE_ENV !== 'production';
-    res.json({ ok: true, devToken: dev ? verifToken : undefined });
+    res.json({ ok: true, devToken: dev ? code : undefined });
   } catch (e) {
     console.error(e);
     res.status(400).json({ error: 'send verification failed' });
@@ -305,13 +341,14 @@ app.post('/email/verify', async (req, res) => {
     const { token } = req.body || {};
     if (!token) return res.status(400).json({ error: 'missing token' });
     const auth = req.headers.authorization || '';
+    const hashed = sha256(token);
     let rows;
     if (auth.startsWith('Bearer ')) {
       const jwtTok = auth.slice(7);
       const payload = jwt.verify(jwtTok, JWT_SECRET);
-      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1 AND user_id=$2', [token, payload.sub])).rows;
+      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1 AND user_id=$2', [hashed, payload.sub])).rows;
     } else {
-      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1', [token])).rows;
+      rows = (await pool.query('SELECT id, user_id, purpose, expires_at, used_at FROM email_tokens WHERE token=$1', [hashed])).rows;
     }
     if (!rows.length) return res.status(400).json({ error: 'invalid token' });
     const tok = rows[0];

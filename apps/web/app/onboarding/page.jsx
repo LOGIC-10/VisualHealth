@@ -14,6 +14,7 @@ export default function Onboarding(){
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [devToken, setDevToken] = useState('');
+  const [cooldownSec, setCooldownSec] = useState(0);
 
   async function readJson(resp){
     const ct = resp.headers.get('content-type') || '';
@@ -79,15 +80,24 @@ export default function Onboarding(){
                 <button disabled={busy} className="vh-btn vh-btn-primary">{t('Verify')}</button>
               </form>
               <div style={{ fontSize:12, color:'#64748b' }}>
-                <button disabled={busy} className="vh-btn vh-btn-link" onClick={async()=>{
+                <button disabled={busy || cooldownSec>0} className="vh-btn vh-btn-link" onClick={async()=>{
                   setErr(''); setOk(''); setDevToken(''); setBusy(true);
                   try {
                     const resp = await fetch(AUTH_BASE + '/email/send_verification', { method:'POST', headers:{ 'Content-Type':'application/json', 'Accept':'application/json', Authorization:`Bearer ${token}` } });
-                    const j = await readJson(resp); if (!resp.ok || j?.error) throw new Error(j?.error || 'send failed');
-                    setOk(t('VerificationEmailSent'));
-                    if (j?.devToken) setDevToken(j.devToken);
+                    const j = await readJson(resp);
+                    if (resp.status === 429 && (j?.error === 'cooldown')) {
+                      const sec = Math.max(1, Math.floor(j?.retrySec || 60));
+                      setCooldownSec(sec);
+                    } else if (!resp.ok || j?.error) {
+                      throw new Error(j?.error || 'send failed');
+                    } else {
+                      setOk(t('VerificationEmailSent'));
+                      if (j?.devToken) setDevToken(j.devToken);
+                      setCooldownSec(60);
+                    }
                   } catch(e){ setErr(e?.message || 'send failed'); } finally { setBusy(false); }
                 }}>{t('ResendCode')||'Resend code'}</button>
+                {cooldownSec>0 && <span style={{ marginLeft:8 }}>{t('ResendIn')||'Resend in'} {cooldownSec}s</span>}
                 {devToken && <span style={{ marginLeft:8, color:'#334155' }}>DEV code: <code>{devToken}</code></span>}
               </div>
             </>
@@ -184,13 +194,31 @@ export default function Onboarding(){
     let cancelled = false;
     (async () => {
       try {
-        const resp = await fetch(AUTH_BASE + '/email/send_verification', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` } });
-        const j = await resp.json(); if (!resp.ok || j?.error) throw new Error(j?.error || 'send failed');
-        if (!cancelled) { setOk(t('VerificationEmailSent')); if (j?.devToken) setDevToken(j.devToken); }
+        const resp = await fetch(AUTH_BASE + '/email/send_verification', { method:'POST', headers:{ 'Content-Type':'application/json', 'Accept':'application/json', Authorization:`Bearer ${token}` } });
+        const j = await readJson(resp);
+        if (!cancelled) {
+          if (resp.status === 429 && (j?.error === 'cooldown')) {
+            const sec = Math.max(1, Math.floor(j?.retrySec || 60));
+            setCooldownSec(sec);
+          } else if (!resp.ok || j?.error) {
+            throw new Error(j?.error || 'send failed');
+          } else {
+            setOk(t('VerificationEmailSent'));
+            if (j?.devToken) setDevToken(j.devToken);
+            setCooldownSec(60);
+          }
+        }
       } catch(e) { if (!cancelled) setErr(e?.message || 'send failed'); }
     })();
     return () => { cancelled = true; };
   }, [token, step, me?.email_verified_at]);
+
+  // Cooldown countdown timer
+  useEffect(() => {
+    if (cooldownSec <= 0) return;
+    const id = setInterval(() => setCooldownSec(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [cooldownSec]);
 
   return (
     <div style={{ maxWidth: 680, margin:'24px auto', padding:'0 24px' }}>

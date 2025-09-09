@@ -48,6 +48,8 @@ a { color: inherit; }
 .vh-btn-primary { background: #111; color: #fff; border-color: #111; }
 .vh-btn-outline { background: #fff; color: #111; }
 .vh-btn-stop { background: #60a5fa; color: #fff; border-color: #60a5fa; }
+.vh-btn-link { background: transparent; border: none; color: #2563eb; padding: 0 4px; }
+.vh-btn-link:hover { text-decoration: underline; filter: none; }
 
 /* Nav links */
 .vh-nav-link {

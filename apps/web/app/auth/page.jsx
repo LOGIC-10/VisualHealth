@@ -35,7 +35,7 @@ export default function AuthPage() {
         if (mode === 'signup' && displayName) body.displayName = displayName.trim();
         const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const json = await resp.json(); if (!resp.ok || json?.error) throw new Error(json?.error || 'failed');
-        if (json.token) { localStorage.setItem('vh_token', json.token); window.location.href = '/'; return; }
+        if (json.token) { localStorage.setItem('vh_token', json.token); window.location.href = '/onboarding'; return; }
       } else if (mode === 'forgot') {
         const resp = await fetch(AUTH_BASE + '/password/forgot', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email }) });
         const j = await resp.json(); if (!resp.ok || j?.error) throw new Error(j?.error || 'failed');
@@ -52,7 +52,6 @@ export default function AuthPage() {
       <div style={{ display:'flex', gap:8, marginBottom:12 }}>
         <button onClick={()=>{ setMode('login'); setErr(''); setOk(''); }} className={mode==='login'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('LoginTitle')}</button>
         <button onClick={()=>{ setMode('signup'); setErr(''); setOk(''); }} className={mode==='signup'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('SignupTitle')}</button>
-        <button onClick={()=>{ setMode('forgot'); setErr(''); setOk(''); }} className={mode==='forgot'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('ForgotPassword')}</button>
       </div>
       <form onSubmit={onSubmit} style={{ display:'grid', gap:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
         <div style={{ fontSize:22, fontWeight:600 }}>{mode==='login'? t('LoginTitle') : mode==='signup'? t('SignupTitle') : t('ForgotPassword')}</div>

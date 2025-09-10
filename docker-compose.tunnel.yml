@@ -1,0 +1,27 @@
+services:
+  frontend:
+    environment:
+      - NEXT_PUBLIC_API_AUTH=/api/auth
+      - NEXT_PUBLIC_API_MEDIA=/api/media
+      - NEXT_PUBLIC_API_ANALYSIS=/api/analysis
+      - NEXT_PUBLIC_API_FEED=/api/feed
+      - NEXT_PUBLIC_API_VIZ=/api/viz
+      - NEXT_PUBLIC_API_LLM=/api/llm
+
+  auth-service:
+    ports: []
+
+  media-service:
+    ports: []
+
+  analysis-service:
+    ports: []
+
+  feed-service:
+    ports: []
+
+  viz-service:
+    ports: []
+
+  llm-service:
+    ports: []

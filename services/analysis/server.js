@@ -334,9 +334,30 @@ app.post('/records/:id/ai_start', async (req, res) => {
         const heartMetrics = await heartMetricsResp.json();
         if (heartMetrics?.error) throw new Error(heartMetrics.error);
         // 2) Clinical PCG analysis (our heuristic metrics) if available
-        const recNow = await pool.query('SELECT adv, features FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
-        const advMetrics = recNow.rows[0]?.adv || null;
+        const recNow = await pool.query('SELECT adv, features, media_id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+        let advMetrics = recNow.rows[0]?.adv || null;
         const basicFeatures = recNow.rows[0]?.features || null;
+        const recMediaId = recNow.rows[0]?.media_id;
+
+        // If clinical PCG not present yet, compute it now to include in AI context
+        if (!advMetrics) {
+          try {
+            let resp2 = null;
+            if (sampleRate && Array.isArray(pcm) && pcm.length>0) {
+              resp2 = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate, pcm }) });
+            } else if (recMediaId) {
+              resp2 = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers: { 'Content-Type':'application/json', Authorization: req.headers.authorization || '' }, body: JSON.stringify({ mediaId: recMediaId }) });
+            }
+            if (resp2 && resp2.ok) {
+              advMetrics = await resp2.json();
+              // Persist and notify via SSE
+              try {
+                await pool.query('UPDATE analysis_records SET adv=$1 WHERE id=$2 AND user_id=$3', [ advMetrics, req.params.id, userId ]);
+                sseBroadcast(req.params.id, 'pcg_done', { adv: advMetrics });
+              } catch {}
+            }
+          } catch {}
+        }
         // Compose a unified context, prefer clinical PCG when conflicts
         const metrics = {
           clinical_pcg: advMetrics || null,

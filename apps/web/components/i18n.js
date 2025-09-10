@@ -342,7 +342,7 @@ export const dict = {
     GainOn: '已开启',
     GainOff: '未开启',
     GainLabel: '增益',
-    ClinicalAnalysis: '临床级 PCG 分析',
+    ClinicalAnalysis: '临床 PCG 分析',
     Segmentation: '分割',
     HeartRate: '心率（次/分）',
     RRMean: 'RR均值（秒）',

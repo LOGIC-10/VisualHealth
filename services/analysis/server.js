@@ -44,6 +44,14 @@ async function init() {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_record ON analysis_chat_messages(record_id);
     CREATE INDEX IF NOT EXISTS idx_chat_user ON analysis_chat_messages(user_id);
+    -- Cross-record cache by audio content hash (sha-256 hex)
+    CREATE TABLE IF NOT EXISTS pcg_cache (
+      hash TEXT PRIMARY KEY,
+      spec_media_id UUID,
+      adv JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
 }
 
@@ -55,12 +63,65 @@ function verify(req) {
   return jwt.decode(token);
 }
 
+function verifyFromHeaderOrQuery(req) {
+  try {
+    return verify(req);
+  } catch (e) {
+    const q = req.query || {};
+    const token = q.access_token;
+    if (!token) throw e;
+    // In dev we just decode; in prod you should verify signature
+    return jwt.decode(token);
+  }
+}
+
 const app = express();
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// --- SSE streams per analysis record ---
+const sseClients = new Map(); // recordId -> Set(res)
+
+app.get('/records/:id/stream', async (req, res) => {
+  try {
+    const payload = verifyFromHeaderOrQuery(req);
+    const userId = payload?.sub;
+    if (!userId) return res.status(401).end();
+    // Ensure ownership before attaching stream
+    const rec = await pool.query('SELECT id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+    if (!rec.rowCount) return res.status(404).end();
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    // Initial comment to establish stream
+    res.write(': connected\n\n');
+    // Add client
+    if (!sseClients.has(req.params.id)) sseClients.set(req.params.id, new Set());
+    const set = sseClients.get(req.params.id);
+    set.add(res);
+
+    req.on('close', () => {
+      try { set.delete(res); } catch {}
+    });
+  } catch (e) {
+    return res.status(401).end();
+  }
+});
+
+function sseBroadcast(recordId, event, dataObj) {
+  const set = sseClients.get(recordId);
+  if (!set || set.size === 0) return;
+  const payload = `event: ${event}\ndata: ${JSON.stringify(dataObj || {})}\n\n`;
+  for (const res of Array.from(set)) {
+    try { res.write(payload); } catch {}
+  }
+}
 
 // Accept JSON: { sampleRate: number, channel: number, pcm: number[] }
 app.post('/analyze', (req, res) => {
@@ -173,14 +234,32 @@ app.patch('/records/:id', async (req, res) => {
   try {
     const payload = verify(req);
     const userId = payload?.sub;
-    const { title, adv, specMediaId, ai, aiGeneratedAt } = req.body || {};
+    const { title, adv, specMediaId, ai, aiGeneratedAt, audioHash } = req.body || {};
     if (title==null && adv==null && specMediaId==null && ai==null && aiGeneratedAt==null) return res.status(400).json({ error: 'no fields' });
     const { rows } = await pool.query(
       'UPDATE analysis_records SET title=COALESCE($1,title), adv=COALESCE($2,adv), spec_media_id=COALESCE($3,spec_media_id), ai=COALESCE($4,ai), ai_generated_at=COALESCE($5,ai_generated_at) WHERE id=$6 AND user_id=$7 RETURNING id, media_id, filename, title, mimetype, size, created_at, adv, spec_media_id, ai, ai_generated_at',
       [title ?? null, adv ?? null, specMediaId ?? null, ai ?? null, aiGeneratedAt ?? null, req.params.id, userId]
     );
     if (!rows.length) return res.status(404).json({ error: 'not found' });
-    res.json(rows[0]);
+    const updated = rows[0];
+    // Best-effort: update cross-record cache when audioHash present
+    if (audioHash && typeof audioHash === 'string' && audioHash.length >= 32) {
+      try {
+        await pool.query(
+          `INSERT INTO pcg_cache(hash, spec_media_id, adv, updated_at)
+           VALUES ($1, $2, $3, now())
+           ON CONFLICT (hash) DO UPDATE SET
+             spec_media_id=COALESCE(EXCLUDED.spec_media_id, pcg_cache.spec_media_id),
+             adv=COALESCE(EXCLUDED.adv, pcg_cache.adv),
+             updated_at=now()`,
+          [audioHash, specMediaId ?? null, adv ?? null]
+        );
+      } catch (e) { /* non-fatal */ }
+    }
+    // SSE notify
+    if (specMediaId) sseBroadcast(req.params.id, 'spec_done', { specMediaId });
+    if (adv) sseBroadcast(req.params.id, 'pcg_done', { adv });
+    res.json(updated);
   } catch (e) {
     console.error(e);
     res.status(400).json({ error: 'update failed' });
@@ -213,12 +292,10 @@ app.post('/records/:id/ai_start', async (req, res) => {
     const userId = payload?.sub;
     const { sampleRate, pcm, lang } = req.body || {};
     if (!userId) return res.status(401).json({ error: 'unauthorized' });
-    if (!sampleRate || !Array.isArray(pcm) || pcm.length === 0) {
-      return res.status(400).json({ error: 'sampleRate and pcm required' });
-    }
-    // ensure record belongs to user
-    const rec = await pool.query('SELECT id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+    // ensure record belongs to user and get media id
+    const rec = await pool.query('SELECT id, media_id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
     if (!rec.rowCount) return res.status(404).json({ error: 'not found' });
+    const mediaId = rec.rows[0].media_id;
 
     // Idempotency: prevent duplicate background runs for same lang
     const L = lang || 'zh';
@@ -246,12 +323,30 @@ app.post('/records/:id/ai_start', async (req, res) => {
     // background task
     (async () => {
       try {
-        const m = await fetch(VIZ_BASE + '/hard_algo_metrics', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sampleRate, pcm })
-        });
-        const metrics = await m.json();
-        if (metrics?.error) throw new Error(metrics.error);
+        // Gather multi-source metrics for better consistency and context
+        // 1) PCG hard metrics (ai_heart)
+        let heartMetricsResp;
+        if (sampleRate && Array.isArray(pcm) && pcm.length>0) {
+          heartMetricsResp = await fetch(VIZ_BASE + '/hard_algo_metrics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sampleRate, pcm }) });
+        } else {
+          heartMetricsResp = await fetch(VIZ_BASE + '/hard_algo_metrics_media', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization || '' }, body: JSON.stringify({ mediaId }) });
+        }
+        const heartMetrics = await heartMetricsResp.json();
+        if (heartMetrics?.error) throw new Error(heartMetrics.error);
+        // 2) Clinical PCG analysis (our heuristic metrics) if available
+        const recNow = await pool.query('SELECT adv, features FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+        const advMetrics = recNow.rows[0]?.adv || null;
+        const basicFeatures = recNow.rows[0]?.features || null;
+        // Compose a unified context, prefer clinical PCG when conflicts
+        const metrics = {
+          clinical_pcg: advMetrics || null,
+          ai_heart: heartMetrics || null,
+          features: basicFeatures || null,
+          policy: {
+            prefer: 'clinical_pcg',
+            note: 'When values conflict (e.g., heart rate), prefer clinical_pcg.'
+          }
+        };
         // Build LLM prompt outside of algorithm service (decoupled)
         const L = lang || 'zh';
         let sys, user;
@@ -263,7 +358,7 @@ app.post('/records/:id/ai_start', async (req, res) => {
             '语气客观谨慎；若证据不足，请明确说明不确定。'
           );
           user = (
-            '请基于以下 JSON 指标，按 Markdown 输出三个部分:\n' +
+            '请基于以下 JSON 指标，按 Markdown 输出三个部分；如同一项在 clinical_pcg 与 ai_heart 存在冲突，请优先采纳 clinical_pcg。\n' +
             '## 总结\n简要 2-3 句。\n\n' +
             '## 可能的风险\n若无明显异常，写：未见明显异常。\n\n' +
             '## 建议\n包含生活方式、是否建议复测、何时就医等。\n\n' +
@@ -277,7 +372,7 @@ app.post('/records/:id/ai_start', async (req, res) => {
             ' Be clear and cautious; state uncertainty when evidence is insufficient.'
           );
           user = (
-            'Using the JSON metrics below, return three Markdown sections:\n' +
+            'Using the JSON metrics below, return three Markdown sections. If clinical_pcg and ai_heart conflict on a value (e.g., heart rate), prefer clinical_pcg.\n' +
             '## Summary\n2–3 sentences.\n\n' +
             '## Potential Risks\nIf none, say: No obvious abnormality.\n\n' +
             '## Advice\nLifestyle, whether to retest, and when to see a doctor.\n\n' +
@@ -368,5 +463,43 @@ app.post('/records/:id/chat', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(400).json({ error: 'chat append failed' });
+  }
+});
+
+// --- Simple cache API for viz-service (hash -> {spec_media_id, adv}) ---
+app.get('/cache/:hash', async (req, res) => {
+  try {
+    // Require auth (but cache itself is cross-user)
+    const payload = verifyFromHeaderOrQuery(req);
+    if (!payload?.sub) return res.status(401).json({ error: 'unauthorized' });
+    const h = String(req.params.hash || '').trim();
+    if (!h) return res.status(400).json({ error: 'missing hash' });
+    const { rows } = await pool.query('SELECT hash, spec_media_id, adv FROM pcg_cache WHERE hash=$1', [h]);
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(400).json({ error: 'cache get failed' });
+  }
+});
+
+app.post('/cache', async (req, res) => {
+  try {
+    const payload = verifyFromHeaderOrQuery(req);
+    if (!payload?.sub) return res.status(401).json({ error: 'unauthorized' });
+    const { hash, specMediaId, adv } = req.body || {};
+    if (!hash) return res.status(400).json({ error: 'missing hash' });
+    const { rows } = await pool.query(
+      `INSERT INTO pcg_cache(hash, spec_media_id, adv, created_at, updated_at)
+       VALUES ($1,$2,$3, now(), now())
+       ON CONFLICT (hash) DO UPDATE SET
+         spec_media_id=COALESCE(EXCLUDED.spec_media_id, pcg_cache.spec_media_id),
+         adv=COALESCE(EXCLUDED.adv, pcg_cache.adv),
+         updated_at=now()
+       RETURNING hash, spec_media_id, adv`,
+      [String(hash), specMediaId ?? null, adv ?? null]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(400).json({ error: 'cache upsert failed' });
   }
 });

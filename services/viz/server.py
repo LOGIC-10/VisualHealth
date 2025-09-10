@@ -1,5 +1,6 @@
 import io
 import os
+import hashlib
 from typing import Optional, List
 
 import numpy as np
@@ -8,11 +9,15 @@ matplotlib.use('Agg')  # non-GUI backend
 import matplotlib.pyplot as plt
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Body
+from fastapi import Body, Header
 from fastapi.responses import Response, JSONResponse
 from ai_heart import analyze_pcg_from_pcm
+import httpx
+from scipy.io import wavfile
 
 PORT = int(os.getenv('PORT', '4006'))
+MEDIA_BASE = os.getenv('MEDIA_BASE', 'http://media-service:4003')
+ANALYSIS_BASE = os.getenv('ANALYSIS_BASE', 'http://analysis-service:4004')
 
 app = FastAPI()
 app.add_middleware(
@@ -21,6 +26,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Compute-Time","X-STFT-Time","X-Plot-Time"],
 )
 
 # Try to set a font that supports CJK
@@ -46,6 +52,56 @@ def _slice_by_time(y: np.ndarray, sr: int, start_sec: Optional[float], end_sec: 
     start_idx = int(np.clip(start_idx, 0, n))
     end_idx = int(np.clip(end_idx, start_idx, n))
     return y[start_idx:end_idx]
+
+
+def _decimate_to_2k(y: np.ndarray, sr: int):
+    target_sr = 2000
+    if sr > target_sr:
+        k = max(1, int(round(sr / target_sr)))
+        if k > 1:
+            win = min(len(y), k)
+            if win > 1:
+                box = np.ones(win, dtype=np.float32) / float(win)
+                y = np.convolve(y, box, mode='same').astype(np.float32)
+            y = y[::k]
+            sr = int(round(sr / k))
+    return y.astype(np.float32, copy=False), int(sr)
+
+
+def _sha256_hex_of_floats(y: np.ndarray, sr: int) -> str:
+    y32 = y.astype(np.float32, copy=False)
+    h = hashlib.sha256()
+    h.update(b'pcg-2k\x00')
+    h.update(sr.to_bytes(4, 'little', signed=False))
+    h.update(y32.tobytes(order='C'))
+    return h.hexdigest()
+
+
+async def _fetch_wav_and_decode(media_id: str, auth_header: Optional[str]):
+    if not media_id:
+        return None, None, 'missing mediaId'
+    url = f"{MEDIA_BASE}/file/{media_id}"
+    headers = {}
+    if auth_header:
+        headers['Authorization'] = auth_header
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.get(url, headers=headers)
+        if r.status_code != 200:
+            return None, None, f"media fetch failed: {r.status_code}"
+        data = r.content
+        try:
+            bio = io.BytesIO(data)
+            sr, x = wavfile.read(bio)
+            if x.dtype.kind in ('i', 'u'):
+                maxv = np.iinfo(x.dtype).max
+                y = (x.astype(np.float32) / float(maxv))
+            elif x.dtype.kind == 'f':
+                y = x.astype(np.float32)
+            else:
+                return None, None, 'unsupported wav dtype'
+            return int(sr), y, None
+        except Exception as e:
+            return None, None, f'unsupported format or decode failed: {e}'
 
 
 @app.post('/waveform_pcm')
@@ -92,6 +148,9 @@ async def render_waveform_pcm(
     return Response(content=buf.read(), media_type='image/png')
 
 
+import time
+
+
 @app.post('/spectrogram_pcm')
 async def render_spectrogram_pcm(
     sampleRate: int = Body(...),
@@ -101,20 +160,45 @@ async def render_spectrogram_pcm(
     width: int = Body(1400),
     height: int = Body(320),
     maxFreq: Optional[int] = Body(2000),
+    hash: Optional[str] = Body(None),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False),
 ):
+    t0_all = time.perf_counter()
     y = np.asarray(pcm, dtype=np.float32)
     sr = int(sampleRate)
     y = _slice_by_time(y, sr, startSec, endSec)
     if len(y) == 0:
         return JSONResponse({"error": "empty segment"}, status_code=400)
 
-    # Spectrogram via STFT
+    # Downsample to ~2kHz for consistency and speed
+    y, sr = _decimate_to_2k(y, sr)
+
+    # Cache lookup (if hash provided)
+    cache_hash = (hash or '').strip()
+    if cache_hash:
+        try:
+            headers = {'Authorization': authorization} if authorization else {}
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(f"{ANALYSIS_BASE}/cache/{cache_hash}", headers=headers)
+                if r.status_code == 200:
+                    j = r.json()
+                    smid = j.get('spec_media_id')
+                    if smid:
+                        mr = await client.get(f"{MEDIA_BASE}/file/{smid}", headers=headers)
+                        if mr.status_code == 200:
+                            hdr = { 'X-Cache': 'HIT', 'X-Compute-Time': '0.00', 'X-STFT-Time': '0.00', 'X-Plot-Time': '0.00' }
+                            return Response(content=mr.content, media_type='image/png', headers=hdr)
+        except Exception:
+            pass
+
+    # Spectrogram via STFT (on ~2kHz)
     n_fft = 1024
     hop = n_fft // 4
     # STFT
     window = np.hanning(n_fft).astype(np.float32)
     num_frames = 1 + (len(y) - n_fft) // hop if len(y) >= n_fft else 1
     frames = []
+    t0_stft = time.perf_counter()
     for i in range(num_frames):
         start = i * hop
         seg = y[start:start + n_fft]
@@ -123,6 +207,7 @@ async def render_spectrogram_pcm(
             pad[:len(seg)] = seg
             seg = pad
         frames.append(np.fft.rfft(seg * window))
+    t1_stft = time.perf_counter()
     S = np.abs(np.stack(frames, axis=1))  # (freq_bins, time)
     S /= (np.max(S) + 1e-9)
     S_db = 20.0 * np.log10(S + 1e-6)
@@ -138,6 +223,7 @@ async def render_spectrogram_pcm(
         f = f[f <= maxFreq]
     extent = [0, times[-1] if len(times) else 0, f[0] if len(f) else 0, f[-1] if len(f) else (sr/2)]
 
+    t0_plot = time.perf_counter()
     fig, ax = plt.subplots(figsize=(width/100, height/100), dpi=100)
     im = ax.imshow(S_db, origin='lower', aspect='auto', cmap='magma', extent=extent)
     ax.set_xlabel('Time (s)')
@@ -150,7 +236,192 @@ async def render_spectrogram_pcm(
     fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
     buf.seek(0)
-    return Response(content=buf.read(), media_type='image/png')
+    t1_all = time.perf_counter()
+    # Timings
+    stft_ms = (t1_stft - t0_stft) * 1000.0
+    plot_ms = (time.perf_counter() - t0_plot) * 1000.0
+    total_ms = (t1_all - t0_all) * 1000.0
+    headers = {
+        'X-Compute-Time': f"{total_ms:.2f}",
+        'X-STFT-Time': f"{stft_ms:.2f}",
+        'X-Plot-Time': f"{plot_ms:.2f}",
+    }
+    return Response(content=buf.read(), media_type='image/png', headers=headers)
+
+
+@app.post('/features_media')
+async def features_media(
+    mediaId: str = Body(...),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
+):
+    sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    # reuse compute_features_pcm core
+    # minimal inline copy to avoid refactor
+    n = len(y)
+    dur = n / sr
+    rms = float(np.sqrt(np.mean(y**2)))
+    zc = float(np.mean(np.abs(np.diff(np.sign(y)))))/2.0 * sr/len(y) * len(y)/sr
+    n_fft = 1024
+    hop = 256
+    window = np.hanning(n_fft).astype(np.float32)
+    frames = []
+    for i in range(0, max(len(y)-n_fft, 0)+1, hop):
+        seg = y[i:i+n_fft]
+        if len(seg) < n_fft:
+            pad = np.zeros(n_fft, dtype=np.float32)
+            pad[:len(seg)] = seg
+            seg = pad
+        spec = np.abs(np.fft.rfft(seg * window))
+        frames.append(spec)
+    if not frames:
+        frames = [np.abs(np.fft.rfft(np.pad(y, (0, max(0, n_fft-len(y)))), n=n_fft))]
+    S = np.stack(frames, axis=1)
+    S_power = S ** 2
+    freqs = np.fft.rfftfreq(n_fft, d=1.0/sr)
+    mag_sum = S_power.sum(axis=0) + 1e-9
+    centroid = float(np.mean((freqs[:, None] * S_power).sum(axis=0) / mag_sum))
+    bandwidth = float(np.mean(np.sqrt((((freqs[:, None] - centroid) ** 2) * S_power).sum(axis=0) / mag_sum)))
+    cumsum = np.cumsum(S_power, axis=0)
+    total = cumsum[-1, :]
+    roll_idx = np.array([np.searchsorted(cumsum[:, i], 0.95 * total[i]) for i in range(S_power.shape[1])])
+    rolloff = float(np.mean(freqs[roll_idx]))
+    flatness = float(np.mean(np.exp(np.mean(np.log(S_power + 1e-9), axis=0) / (np.mean(S_power, axis=0) + 1e-9))))
+    flux = float(np.mean(np.sqrt(np.sum(np.diff(S, axis=1, prepend=S[:, :1]) ** 2, axis=0))))
+    peak = float(np.max(np.abs(y)))
+    crest = float(peak / (rms + 1e-9))
+    return {
+        "sampleRate": sr,
+        "durationSec": dur,
+        "rms": rms,
+        "zcrPerSec": zc,
+        "spectralCentroid": centroid,
+        "spectralBandwidth": bandwidth,
+        "rolloff95": rolloff,
+        "spectralFlatness": flatness,
+        "spectralFlux": flux,
+        "peak": peak,
+        "crestFactor": crest,
+    }
+
+
+@app.post('/spectrogram_media')
+async def spectrogram_media(
+    mediaId: str = Body(...),
+    width: int = Body(1400),
+    height: int = Body(320),
+    maxFreq: Optional[int] = Body(2000),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
+):
+    t0_all = time.perf_counter()
+    sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    # Downsample to ~2kHz
+    y, sr = _decimate_to_2k(y, sr)
+    # reuse spectrogram code
+    n_fft = 1024
+    hop = n_fft // 4
+    window = np.hanning(n_fft).astype(np.float32)
+    num_frames = 1 + (len(y) - n_fft) // hop if len(y) >= n_fft else 1
+    frames = []
+    t0_stft = time.perf_counter()
+    for i in range(num_frames):
+        start = i * hop
+        seg = y[start:start + n_fft]
+        if len(seg) < n_fft:
+            pad = np.zeros(n_fft, dtype=np.float32)
+            pad[:len(seg)] = seg
+            seg = pad
+        frames.append(np.fft.rfft(seg * window))
+    t1_stft = time.perf_counter()
+    S = np.abs(np.stack(frames, axis=1))
+    S /= (np.max(S) + 1e-9)
+    S_db = 20.0 * np.log10(S + 1e-6)
+    freqs = np.fft.rfftfreq(n_fft, d=1.0/sr)
+    if maxFreq and maxFreq > 0:
+        idx = np.where(freqs <= maxFreq)[0]
+        S_db = S_db[idx, :]
+    times = np.arange(S_db.shape[1]) * (hop / sr)
+    f = np.fft.rfftfreq(n_fft, d=1.0/sr)
+    if maxFreq and maxFreq > 0:
+        f = f[f <= maxFreq]
+    extent = [0, times[-1] if len(times) else 0, f[0] if len(f) else 0, f[-1] if len(f) else (sr/2)]
+    t0_plot = time.perf_counter()
+    fig, ax = plt.subplots(figsize=(width/100, height/100), dpi=100)
+    im = ax.imshow(S_db, origin='lower', aspect='auto', cmap='magma', extent=extent)
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Frequency (Hz)')
+    ax.grid(color='w', alpha=0.2, linewidth=0.5)
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Magnitude (dB)')
+    plt.tight_layout(pad=0.2)
+    buf = io.BytesIO(); fig.savefig(buf, format='png', dpi=100, bbox_inches='tight', pad_inches=0); plt.close(fig)
+    buf.seek(0)
+    t1_all = time.perf_counter()
+    stft_ms = (t1_stft - t0_stft) * 1000.0
+    plot_ms = (time.perf_counter() - t0_plot) * 1000.0
+    total_ms = (t1_all - t0_all) * 1000.0
+    headers = {
+        'X-Compute-Time': f"{total_ms:.2f}",
+        'X-STFT-Time': f"{stft_ms:.2f}",
+        'X-Plot-Time': f"{plot_ms:.2f}",
+    }
+    return Response(content=buf.read(), media_type='image/png', headers=headers)
+
+
+@app.post('/pcg_advanced_media')
+async def pcg_advanced_media(
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
+):
+    # Accept multiple shapes: {mediaId}, {media_id}, {id}
+    mediaId = None
+    try:
+        mediaId = payload.get('mediaId') or payload.get('media_id') or payload.get('id')
+    except Exception:
+        mediaId = None
+    sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    # Reuse pcg_advanced core by calling the function directly
+    # Inline a light wrapper via existing endpoint code path
+    # We duplicate minimal logic by calling pcg_advanced internal computation
+    # For brevity, we send through /pcg_advanced code by constructing body is not trivial here; replicate below
+    # Apply the same decimation logic as pcg_advanced
+    # Ensure ~2kHz
+    y, sr = _decimate_to_2k(y, sr)
+    # Prefer provided hash (from client) to align cross-endpoint caching
+    cache_hash = None
+    try:
+        provided = payload.get('hash')
+        if isinstance(provided, str) and len(provided) >= 32:
+            cache_hash = provided
+    except Exception:
+        cache_hash = None
+    if not cache_hash:
+        # Compute a stable hash of the decimated signal
+        cache_hash = _sha256_hex_of_floats(y, sr)
+    # Now reuse the original function body by simple local call
+    # Build a minimal shim: call analyze_pcg_from_pcm for hard metrics? keep our heuristic version
+    # Here we call the same code path as pcg_advanced (heuristic)
+    # To avoid duplicate implementation, we call the function below inline (copy kept in file)
+    return await pcg_advanced(sampleRate=sr, pcm=y.tolist(), hash=cache_hash, authorization=authorization)
+
+
+@app.post('/hard_algo_metrics_media')
+async def hard_algo_metrics_media(
+    mediaId: str = Body(...),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
+):
+    sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    try:
+        m = analyze_pcg_from_pcm(sr, y.tolist())
+        return m
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @app.post('/features_pcm')
@@ -238,9 +509,13 @@ def _find_peaks(x: np.ndarray, distance: int, threshold: float):
 @app.post('/pcg_advanced')
 async def pcg_advanced(
     sampleRate: int = Body(...),
-    pcm: List[float] = Body(...)
+    pcm: List[float] = Body(...),
+    hash: Optional[str] = Body(None),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
 ):
     # Heuristic CPU-only PCG analysis modules (baseline, non-diagnostic)
+    import time as _time
+    _t0_all = _time.perf_counter()
     sr = int(sampleRate)
     y = np.asarray(pcm, dtype=np.float32)
     n = len(y)
@@ -459,7 +734,7 @@ async def pcg_advanced(
 
     usable_pct = float(np.mean(env > (np.median(env)+0.1*np.std(env))))
 
-    return {
+    _result = {
         'durationSec': dur,
         'hrBpm': float(hr_bpm) if hr_bpm else None,
         'rrMeanSec': float(np.mean(rr)) if len(rr) else None,
@@ -485,6 +760,18 @@ async def pcg_advanced(
             's2': s2_idx[:200]
         }
     }
+    _t1_all = _time.perf_counter()
+    # Persist into cross-record cache by provided hash (best-effort)
+    try:
+        cache_hash = (hash or '').strip()
+        if cache_hash:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                headers2 = {'Authorization': authorization} if authorization else {}
+                await client.post(f"{ANALYSIS_BASE}/cache", json={'hash': cache_hash, 'adv': _result}, headers=headers2)
+    except Exception:
+        pass
+    headers = {'X-Compute-Time': f"{(_t1_all - _t0_all)*1000.0:.2f}"}
+    return JSONResponse(content=_result, headers=headers)
 
 
 @app.post('/hard_algo_metrics')
@@ -493,7 +780,11 @@ async def hard_algo_metrics(
     pcm: List[float] = Body(...)
 ):
     try:
-        m = analyze_pcg_from_pcm(sampleRate, pcm)
+        # Downsample to ~2kHz for consistency & speed
+        sr = int(sampleRate)
+        y = np.asarray(pcm, dtype=np.float32)
+        y, sr = _decimate_to_2k(y, sr)
+        m = analyze_pcg_from_pcm(sr, y.tolist())
         return m
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)

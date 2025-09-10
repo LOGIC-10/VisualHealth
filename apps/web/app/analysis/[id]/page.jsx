@@ -38,6 +38,7 @@ export default function AnalysisDetail({ params }) {
   const pinchRef = useRef({ active:false, id1:null, id2:null, startDist:0, startPx:0, startScroll:0 });
   const [specUrl, setSpecUrl] = useState(null);
   const [adv, setAdv] = useState(null);
+  const [audioHash, setAudioHash] = useState(null);
   const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
   const [progress, setProgress] = useState(0);
   const [audioError, setAudioError] = useState(null);
@@ -59,6 +60,8 @@ export default function AnalysisDetail({ params }) {
   const prevVolRef = useRef(1);
   const [waveFocused, setWaveFocused] = useState(false);
   const [navOffset, setNavOffset] = useState(96);
+  const contentRef = useRef(null);
+  const [contentWidth, setContentWidth] = useState(960);
   useEffect(() => {
     try {
       const nav = document.querySelector('nav');
@@ -67,6 +70,15 @@ export default function AnalysisDetail({ params }) {
         setNavOffset(h + 16);
       }
     } catch {}
+  }, []);
+  useEffect(() => {
+    const el = contentRef.current; if (!el) return;
+    const ro = new ResizeObserver(() => {
+      try { setContentWidth(Math.max(600, Math.floor(el.clientWidth || 960))); } catch {}
+    });
+    ro.observe(el);
+    try { setContentWidth(Math.max(600, Math.floor(el.clientWidth || 960))); } catch {}
+    return () => { try { ro.disconnect(); } catch {} };
   }, []);
 
   // Chat state
@@ -106,11 +118,21 @@ export default function AnalysisDetail({ params }) {
 
   function buildChatContext(){
     const ctx = [];
+    // Always include latest clinical PCG metrics (UI card data)
+    try { if (adv) ctx.push('临床级 PCG 分析 (clinical_pcg):\n```json\n' + JSON.stringify(adv) + '\n```'); } catch {}
+    // Include basic features
+    try { if (features) ctx.push('特征 (features):\n```json\n' + JSON.stringify(features) + '\n```'); } catch {}
+    // Include previous AI, if any, for continuity
     if (meta?.ai) {
       const ttxt = (meta.ai.texts && meta.ai.texts[lang]) || meta.ai.text || '';
-      if (ttxt) ctx.push(`Analysis (Markdown):\n\n${ttxt}`);
-      try { if (meta.ai.metrics) ctx.push(`Metrics: ${JSON.stringify(meta.ai.metrics)}`); } catch {}
+      if (ttxt) ctx.push(`上次AI报告 (Markdown):\n\n${ttxt}`);
+      try { if (meta.ai.metrics) ctx.push('AI指标 (ai_heart):\n```json\n' + JSON.stringify(meta.ai.metrics) + '\n```'); } catch {}
     }
+    // Policy hint to resolve inconsistencies
+    ctx.push(lang==='zh'
+      ? '若 clinical_pcg 与 ai_heart 的数值冲突（如心率），请优先采纳 clinical_pcg。'
+      : 'If clinical_pcg and ai_heart conflict (e.g., heart rate), prefer clinical_pcg.'
+    );
     return ctx.join('\n\n');
   }
 
@@ -287,6 +309,54 @@ export default function AnalysisDetail({ params }) {
     })();
   }, [id, token]);
 
+  // SSE 推送（spec_done/pcg_done）；不可用时采用500ms起步指数退避到3s的短轮询
+  useEffect(() => {
+    if (!token || !id) return;
+    let es = null; let stopped = false; let backoff = 500;
+    const maxBackoff = 3000;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const r = await fetch(ANALYSIS_BASE + `/records/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (r.ok) {
+          const rec = await r.json();
+          if (rec?.adv && !adv) setAdv(rec.adv);
+          if (rec?.spec_media_id && !specUrl) {
+            const fr = await fetch(MEDIA_BASE + `/file/${rec.spec_media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (fr.ok) { const b = await fr.blob(); setSpecUrl(URL.createObjectURL(b)); }
+          }
+        }
+      } catch {}
+      if (stopped) return;
+      const wait = Math.min(maxBackoff, backoff);
+      backoff = Math.min(maxBackoff, Math.floor(backoff * 2));
+      setTimeout(poll, wait);
+    };
+    try {
+      const url = ANALYSIS_BASE + `/records/${id}/stream?access_token=${encodeURIComponent(token)}`;
+      es = new EventSource(url);
+      es.addEventListener('spec_done', async (ev) => {
+        try {
+          const data = JSON.parse(ev.data||'{}');
+          const smid = data?.specMediaId || data?.spec_media_id;
+          if (smid) {
+            const fr = await fetch(MEDIA_BASE + `/file/${smid}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (fr.ok) { const b = await fr.blob(); setSpecUrl(URL.createObjectURL(b)); }
+          }
+        } catch {}
+      });
+      es.addEventListener('pcg_done', (ev) => {
+        try { const data = JSON.parse(ev.data||'{}'); if (data?.adv) setAdv(data.adv); } catch {}
+      });
+      es.onerror = () => { try { es?.close(); } catch {}; poll(); };
+    } catch {
+      poll();
+    }
+    return () => { stopped = true; try { es?.close(); } catch {}; };
+  }, [token, id]);
+
+  // SSE已覆盖spec/adv更新；无需额外轮询逻辑
+
   // Update AI text when language changes or meta updates
   useEffect(() => {
     if (!meta?.ai) return;
@@ -351,6 +421,13 @@ export default function AnalysisDetail({ params }) {
       if (!blob) { setAudioError('无法加载音频文件（可能的权限或密钥问题）'); return; }
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
+      // Compute audio SHA-256 (raw bytes) for caching key
+      try {
+        const bufAll = await blob.arrayBuffer();
+        const h = await crypto.subtle.digest('SHA-256', bufAll);
+        const hex = Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('');
+        setAudioHash(hex);
+      } catch {}
       // Keep existing WebAudio graph; no rewiring needed on src change
       // compute extra features once (off-UI path)
       try {
@@ -365,53 +442,86 @@ export default function AnalysisDetail({ params }) {
         setProgress(0);
         const arr = await blob.arrayBuffer();
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const tDec0 = performance.now();
         const buf = await audioCtx.decodeAudioData(arr.slice(0));
+        const tDec1 = performance.now();
         const ch = buf.getChannelData(0);
         // downsample to ~8k to limit payload
         const targetSR = 8000;
         const ratio = Math.max(1, Math.floor(buf.sampleRate / targetSR));
         const ds = new Float32Array(Math.ceil(ch.length / ratio));
+        const tDs0 = performance.now();
         for (let i = 0; i < ds.length; i++) ds[i] = ch[i * ratio] || 0;
+        const tDs1 = performance.now();
         setLoading(s=>({ ...s, decode:false })); setProgress(p=>p+0.25);
         const payload = { sampleRate: Math.round(buf.sampleRate / ratio), pcm: Array.from(ds) };
         setPcmPayload(payload);
-        // run in parallel
-        const featuresP = (async ()=>{
+        // (internal) local timing available via console only
+        try { console.info('[spec] decodeMs', (tDec1 - tDec0).toFixed(1), 'downsampleMs', (tDs1 - tDs0).toFixed(1)); } catch {}
+        // run in parallel (fire-and-forget; UI should not await batch)
+        void (async ()=>{
           const resp = await fetch(VIZ_BASE + '/features_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
           if (resp.ok) setExtra(await resp.json());
           setLoading(s=>({ ...s, extra:false }));
         })();
-        const advP = needAdv ? (async ()=>{
-          const resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-          if (resp.ok) setAdv(await resp.json());
+        needAdv && void (async ()=>{
+          const t0 = performance.now();
+          // Prefer media-based endpoint to avoid large JSON
+          let resp = null;
+          try {
+            if (meta?.media_id) {
+              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash }) });
+            }
+          } catch {}
+          if (!resp || !resp.ok) {
+            // Fallback to PCM endpoint
+            try {
+              resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash }) });
+            } catch {}
+          }
+          const t1 = performance.now();
+          if (resp && resp.ok) {
+            try {
+              const comp = parseFloat(resp.headers.get('x-compute-time')||'');
+              console.info('[adv] reqMs', (t1-t0).toFixed(1), 'serverMs', isNaN(comp)?'—':comp.toFixed(1));
+            } catch {}
+            const data = await resp.json();
+            setAdv(data);
+            // 后台持久化，便于其他会话直接加载
+            try { await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: data, audioHash }) }); } catch {}
+          }
           setLoading(s=>({ ...s, adv:false })); if (per>0) setProgress(p=>p+per);
-        })() : Promise.resolve();
-        const width = Math.max(800, Math.min(1400, Math.floor((typeof window!=='undefined'? window.innerWidth:1200) - 80)));
-        const specP = needSpec ? (async ()=>{
-          const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width, height: 320 }) });
+        })();
+        const width = Math.max(800, Math.min(1400, Math.floor(contentWidth)));
+        needSpec && void (async ()=>{
+          const tReq0 = performance.now();
+          const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, maxFreq:2000, width, height: 320 }) });
+          const tReq1 = performance.now();
           if (resp.ok) {
             const imgBlob = await resp.blob();
             setSpecUrl(URL.createObjectURL(imgBlob));
-            // cache spectrogram into media and patch record
+            // console-only timings
             try {
-              const fd = new FormData();
-              fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
-              const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
-              const j = await up.json();
-              if (j?.id) {
-                await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ specMediaId: j.id }) });
-              }
+              const total = parseFloat(resp.headers.get('x-compute-time')||'');
+              const stft = parseFloat(resp.headers.get('x-stft-time')||'');
+              const plot = parseFloat(resp.headers.get('x-plot-time')||'');
+              console.info('[spec] reqMs', (tReq1-tReq0).toFixed(1), 'serverMs', isNaN(total)?'—':total.toFixed(1), 'stftMs', isNaN(stft)?'—':stft.toFixed(1), 'plotMs', isNaN(plot)?'—':plot.toFixed(1));
             } catch {}
+            // cache spectrogram into media and patch record (async; don't block render)
+            (async () => {
+              try {
+                const fd = new FormData();
+                fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
+                const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
+                const j = await up.json();
+                if (j?.id) {
+                  await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ specMediaId: j.id, audioHash }) });
+                }
+              } catch {}
+            })();
           }
           setLoading(s=>({ ...s, spec:false })); if (per>0) setProgress(p=>p+per);
-        })() : Promise.resolve();
-        await Promise.allSettled([featuresP, advP, specP]);
-        // cache adv to record if not present
-        try {
-          if (!meta?.adv && adv) {
-            await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv }) });
-          }
-        } catch {}
+        })();
       } catch {}
     })();
   }, [meta, token]);
@@ -790,7 +900,7 @@ export default function AnalysisDetail({ params }) {
       gap: 16,
       alignItems: 'start'
     }}>
-      <div style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
+      <div ref={contentRef} style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
       <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         {!editing ? (

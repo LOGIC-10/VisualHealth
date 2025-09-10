@@ -12,5 +12,15 @@ services:
       - WATCHPACK_POLLING_INTERVAL=500
       - CHOKIDAR_USEPOLLING=true
 
+  viz-service:
+    command: sh -c "uvicorn server:app --host 0.0.0.0 --port 4006 --reload"
+    volumes:
+      - ./services/viz:/app
+
+  analysis-service:
+    command: sh -c "node --watch server.js"
+    volumes:
+      - ./services/analysis:/app
+
 volumes:
   web_node_modules:

@@ -118,6 +118,8 @@ services:
     build: ./services/viz
     environment:
       - PORT=4006
+      - MEDIA_BASE=http://media-service:4003
+      - ANALYSIS_BASE=http://analysis-service:4004
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL}
       - LLM_MODEL=${LLM_MODEL}

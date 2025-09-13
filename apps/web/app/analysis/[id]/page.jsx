@@ -137,17 +137,11 @@ export default function AnalysisDetail({ params }) {
     try { if (adv) ctx.push('临床级 PCG 分析 (clinical_pcg):\n```json\n' + JSON.stringify(adv) + '\n```'); } catch {}
     // Include basic features
     try { if (features) ctx.push('特征 (features):\n```json\n' + JSON.stringify(features) + '\n```'); } catch {}
-    // Include previous AI, if any, for continuity
+    // Include previous AI text, if any, for continuity（不再包含旧算法指标）
     if (meta?.ai) {
       const ttxt = (meta.ai.texts && meta.ai.texts[lang]) || meta.ai.text || '';
       if (ttxt) ctx.push(`上次AI报告 (Markdown):\n\n${ttxt}`);
-      try { if (meta.ai.metrics) ctx.push('AI指标 (ai_heart):\n```json\n' + JSON.stringify(meta.ai.metrics) + '\n```'); } catch {}
     }
-    // Policy hint to resolve inconsistencies
-    ctx.push(lang==='zh'
-      ? '若 clinical_pcg 与 ai_heart 的数值冲突（如心率），请优先采纳 clinical_pcg。'
-      : 'If clinical_pcg and ai_heart conflict (e.g., heart rate), prefer clinical_pcg.'
-    );
     return ctx.join('\n\n');
   }
 
@@ -400,7 +394,6 @@ export default function AnalysisDetail({ params }) {
           const txt = (rec.ai.texts && rec.ai.texts[lang]) || rec.ai.text || '';
           if (txt && txt.length > 0) {
             setAiText(txt);
-            try { setAiMetrics(rec.ai.metrics || null); } catch {}
             try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {}
             clearInterval(iv);
           }
@@ -572,22 +565,7 @@ export default function AnalysisDetail({ params }) {
     })();
   }, [meta, token]);
 
-  // If AI exists but missing current language text, silently schedule background generation
-  useEffect(() => {
-    if (!token || !meta || !pcmPayload) return;
-    const hasTexts = !!meta?.ai?.texts;
-    const hasLang = hasTexts && (meta.ai.texts[lang] && meta.ai.texts[lang].length > 0);
-    if (meta?.ai && !hasLang) {
-      (async ()=>{
-        try {
-          // Mark as submitted to prevent repeated manual clicks
-          setAiSubmitted(true);
-          try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
-          await fetch(ANALYSIS_BASE + `/records/${id}/ai_start`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ ...pcmPayload, lang }) });
-        } catch {}
-      })();
-    }
-  }, [lang, meta, pcmPayload, token, id]);
+  // 不再自动调用后端 ai_start 进行计算；如需自动生成，可在此直接调用 LLM 服务
   // Init WaveSurfer bound to the HTMLAudioElement (so bottom control bar controls everything)
   useEffect(() => {
     if (!audioUrl || !waveWrapRef.current || !audioRef.current) return;
@@ -1321,49 +1299,49 @@ export default function AnalysisDetail({ params }) {
       <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
         {!aiText && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-          <button disabled={aiBusy || aiSubmitted || !!aiText || !pcmPayload} onClick={async ()=>{
-            if (!pcmPayload || aiSubmitted) return; setAiBusy(true); setAiErr('');
+          <button disabled={aiBusy} onClick={async ()=>{
+            setAiBusy(true); setAiErr('');
             try{
-              const r = await fetch(ANALYSIS_BASE + `/records/${id}/ai_start`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ ...pcmPayload, lang }) });
-              const j = await r.json(); if (!r.ok || j?.error) throw new Error(j?.error || 'start failed');
-              // inform submitted; we don't poll to respect background requirement
-              setAiErr('');
-              setAiSubmitted(true);
-              try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
-            }catch(e){ setAiErr((e?.message)||'AI analysis failed'); setAiSubmitted(false); try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {} }
+              const sys = lang==='zh'
+                ? '你是一名心血管科医生助手。请基于提供的“临床级PCG指标”和“基础特征”生成一份简洁、可信、可执行的报告，包含：结论、证据与解释、建议（不少于3条，避免夸张医疗承诺）。不要杜撰未给出的测量值。'
+                : 'You are a cardiology assistant. Using the provided clinical PCG metrics and basic features, produce a concise, reliable, actionable report with: Conclusion, Evidence & Interpretation, and 3+ concrete Advice items. Do not fabricate measurements not provided.';
+              const ctx = [];
+              try { if (adv) ctx.push('clinical_pcg:\n```json\n'+JSON.stringify(adv)+'\n```'); } catch {}
+              try { if (features) ctx.push('features:\n```json\n'+JSON.stringify(features)+'\n```'); } catch {}
+              const messages = [
+                { role: 'system', content: sys },
+                { role: 'user', content: (lang==='zh'?'以下是分析指标：\n':'Here are the analysis metrics:\n') + ctx.join('\n\n') }
+              ];
+              const resp = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }) });
+              const j = await resp.json().catch(()=>({}));
+              if (!resp.ok || j?.error) throw new Error(j?.error || 'chat failed');
+              const text = j?.text || '';
+              setAiText(text);
+              // Persist to analysis record for this language
+              const ts = new Date().toISOString();
+              try {
+                await fetch(ANALYSIS_BASE + `/records/${id}`, {
+                  method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ ai: { model: j?.model || 'llm', texts: { [lang]: text } }, aiGeneratedAt: ts })
+                });
+                setMeta(m => ({ ...(m||{}), ai: { ...((m&&m.ai)||{}), texts: { ...(((m&&m.ai)&&m.ai.texts)||{}), [lang]: text } }, ai_generated_at: ts }));
+              } catch {}
+            }catch(e){ setAiErr((e?.message)||'AI analysis failed'); }
             finally{ setAiBusy(false); }
-          }} className="vh-btn vh-btn-primary" style={{ padding:'8px 12px', opacity: (aiBusy || aiSubmitted) ? 0.7 : 1, cursor: pcmPayload?'pointer':'not-allowed' }}>
-            {aiBusy ? t('Analyzing') : aiSubmitted ? t('SubmittedBG') : t('RunAI')}
+          }} className="vh-btn vh-btn-primary" style={{ padding:'8px 12px', opacity: aiBusy ? 0.7 : 1, cursor: 'pointer' }}>
+            {aiBusy ? t('Analyzing') : t('RunAI')}
           </button>
-          {/* Remove duplicate submitted hint since button text shows it */}
           {aiErr && <span style={{ color:'#b91c1c', fontSize:13 }}>{aiErr}</span>}
         </div>
         )}
-        {aiMetrics && (
-          <div style={{ marginTop:8, color:'#0f172a' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
-              <div><b>{t('HRShort')}:</b> {aiMetrics.heart_rate_bpm? aiMetrics.heart_rate_bpm.toFixed(0): '—'} bpm</div>
-              <div><b>{t('S1S2Amp')}:</b> {aiMetrics.s1_s2_amplitude_ratio?.toFixed?.(2) || '—'}</div>
-              <div><b>{t('SystoleSec')}:</b> {aiMetrics.systole_interval_sec?.mean?.toFixed?.(3) || '—'} ({aiMetrics.systole_interval_sec?.count||0})</div>
-              <div><b>{t('DiastoleSec')}:</b> {aiMetrics.diastole_interval_sec?.mean?.toFixed?.(3) || '—'} ({aiMetrics.diastole_interval_sec?.count||0})</div>
-              <div><b>{t('HFRatio')}:</b> {aiMetrics.high_freq_energy_ratio?.toFixed?.(3) || '—'}</div>
-            </div>
-            {aiMetrics.interpretation && (
-              <div style={{ marginTop:8, fontSize:13, color:'#475569' }}>
-                <div>{aiMetrics.interpretation.heart_rate_comment || ''}</div>
-                <div>{aiMetrics.interpretation.amplitude_comment || ''}</div>
-                <div>{aiMetrics.interpretation.murmur_comment || ''}</div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* AI metrics block removed — AI now uses existing metrics in prompt */}
         {aiText && (
           <>
             <div
               style={{ marginTop:12, lineHeight:1.6, color:'#0f172a' }}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(aiText) }}
             />
-            <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>{t('AIGeneratedAt') + ' ' + (aiMetrics?.generated_at ? new Date(aiMetrics.generated_at).toLocaleString() : meta?.ai_generated_at ? new Date(meta.ai_generated_at).toLocaleString() : '')}</div>
+            <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>{t('AIGeneratedAt') + ' ' + (meta?.ai_generated_at ? new Date(meta.ai_generated_at).toLocaleString() : '')}</div>
           </>
         )}
       </div>

@@ -1086,8 +1086,8 @@ export default function AnalysisDetail({ params }) {
             <div><b>{t('DSRatio')}:</b> {adv.dsRatio?.toFixed?.(2) || '—'}</div>
             <div><b>{t('S2Split')}:</b> {adv.s2SplitMs?.toFixed?.(1) || '—'}</div>
             <div><b>{t('A2OS')}:</b> {adv.a2OsMs?.toFixed?.(1) || '—'}</div>
-            <div><b>S1宽度:</b> {adv.s1DurMs?.toFixed?.(1) || '—'} ms</div>
-            <div><b>S2宽度:</b> {adv.s2DurMs?.toFixed?.(1) || '—'} ms</div>
+            <div><b>{t('S1Width')}:</b> {adv.s1DurMs?.toFixed?.(1) || '—'}</div>
+            <div><b>{t('S2Width')}:</b> {adv.s2DurMs?.toFixed?.(1) || '—'}</div>
             <div><b>{t('S1Intensity')}:</b> {adv.s1Intensity?.toFixed?.(3) || '—'}</div>
             <div><b>{t('S2Intensity')}:</b> {adv.s2Intensity?.toFixed?.(3) || '—'}</div>
             <div><b>{t('SysHF')}:</b> {adv.sysHighFreqEnergy ? adv.sysHighFreqEnergy.toFixed(2) : '—'}</div>
@@ -1096,7 +1096,7 @@ export default function AnalysisDetail({ params }) {
             <div><b>{t('SNR')}:</b> {adv.qc?.snrDb?.toFixed?.(1) || '—'}</div>
             <div><b>{t('MotionPct')}:</b> {adv.qc ? Math.round(adv.qc.motionPct*100) : '—'}%</div>
             <div><b>{t('UsablePct')}:</b> {adv.qc ? Math.round(adv.qc.usablePct*100) : '—'}%</div>
-            <div><b>接触噪声:</b> {adv.qc?.contactNoiseSuspected ? '是' : '否'}</div>
+            <div><b>{t('ContactNoise')}:</b> {adv.qc?.contactNoiseSuspected ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
           </div>
             <div style={{ gridColumn:'1 / -1', marginTop: 6, fontSize: 12, color:'#64748b' }}>{t('Disclaimer')}</div>
           </div>
@@ -1105,47 +1105,47 @@ export default function AnalysisDetail({ params }) {
 
       {adv?.extras && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>扩展指标</div>
-          <div style={{ background:'#f8fafc', padding:16, borderRadius:12, display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Extras')}</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             {/* Respiration & S2 split typing */}
-            <div>
-              <div style={{ fontWeight:600, marginBottom:6 }}>呼吸与分裂</div>
-              <div><b>呼吸频率:</b> {adv.extras.respiration?.respRate ? adv.extras.respiration.respRate.toFixed(1) : '—'} /min</div>
-              <div><b>呼吸主导度:</b> {adv.extras.respiration?.respDominance?.toFixed?.(2) || '—'}</div>
-              <div><b>第二心音分裂:</b> {adv.extras.respiration?.s2SplitType || '—'}</div>
-              <div><b>分裂-呼吸相关性:</b> {adv.extras.respiration?.s2SplitCorr?.toFixed?.(2) || '—'}</div>
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div style={{ fontWeight:600, marginBottom:6 }}>{t('RespAndSplit')}</div>
+              <div><b>{t('RespRate')}:</b> {adv.extras.respiration?.respRate ? adv.extras.respiration.respRate.toFixed(1) : '—'} /min</div>
+              <div><b>{t('RespDominance')}:</b> {adv.extras.respiration?.respDominance?.toFixed?.(2) || '—'}</div>
+              <div><b>{t('S2SplitType')}:</b> {adv.extras.respiration?.s2SplitType || '—'}</div>
+              <div><b>{t('S2SplitCorr')}:</b> {adv.extras.respiration?.s2SplitCorr?.toFixed?.(2) || '—'}</div>
             </div>
             {/* Additional sounds */}
-            <div>
-              <div style={{ fontWeight:600, marginBottom:6 }}>附加音</div>
-              <div><b>S3 概率:</b> {(adv.extras.additionalSounds?.s3Prob!=null)? Math.round(adv.extras.additionalSounds.s3Prob*100): '—'}%</div>
-              <div><b>S4 概率:</b> {(adv.extras.additionalSounds?.s4Prob!=null)? Math.round(adv.extras.additionalSounds.s4Prob*100): '—'}%</div>
-              <div><b>喷射音概率:</b> {(adv.extras.additionalSounds?.ejectionClickProb!=null)? Math.round(adv.extras.additionalSounds.ejectionClickProb*100): '—'}%</div>
-              <div><b>开放拍概率:</b> {(adv.extras.additionalSounds?.openingSnapProb!=null)? Math.round(adv.extras.additionalSounds.openingSnapProb*100): '—'}%</div>
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div style={{ fontWeight:600, marginBottom:6 }}>{t('AdditionalSounds')}</div>
+              <div><b>{t('S3Prob')}:</b> {(adv.extras.additionalSounds?.s3Prob!=null)? Math.round(adv.extras.additionalSounds.s3Prob*100): '—'}%</div>
+              <div><b>{t('S4Prob')}:</b> {(adv.extras.additionalSounds?.s4Prob!=null)? Math.round(adv.extras.additionalSounds.s4Prob*100): '—'}%</div>
+              <div><b>{t('EjectionClickProb')}:</b> {(adv.extras.additionalSounds?.ejectionClickProb!=null)? Math.round(adv.extras.additionalSounds.ejectionClickProb*100): '—'}%</div>
+              <div><b>{t('OpeningSnapProb')}:</b> {(adv.extras.additionalSounds?.openingSnapProb!=null)? Math.round(adv.extras.additionalSounds.openingSnapProb*100): '—'}%</div>
             </div>
             {/* Murmur descriptors */}
-            <div>
-              <div style={{ fontWeight:600, marginBottom:6 }}>杂音（筛查）</div>
-              <div><b>存在:</b> {adv.extras.murmur?.present ? '是' : '否'}</div>
-              <div><b>相位:</b> {adv.extras.murmur?.phase || '—'}</div>
-              <div><b>筛查等级(0-3):</b> {adv.extras.murmur?.gradeProxy ?? '—'}</div>
-              <div><b>置信度:</b> {adv.extras.murmur?.confidence!=null ? Math.round(adv.extras.murmur.confidence*100) : '—'}%</div>
-              <div><b>收缩期覆盖:</b> {adv.extras.murmur?.systolic?.coverage!=null ? Math.round(adv.extras.murmur.systolic.coverage*100): '—'}%</div>
-              <div><b>收缩期形态:</b> {adv.extras.murmur?.systolic?.shape || '—'}</div>
-              <div><b>收缩期主频:</b> {adv.extras.murmur?.systolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
-              <div><b>舒张期覆盖:</b> {adv.extras.murmur?.diastolic?.coverage!=null ? Math.round(adv.extras.murmur.diastolic.coverage*100): '—'}%</div>
-              <div><b>舒张期形态:</b> {adv.extras.murmur?.diastolic?.shape || '—'}</div>
-              <div><b>舒张期主频:</b> {adv.extras.murmur?.diastolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div style={{ fontWeight:600, marginBottom:6 }}>{t('MurmurScreening')}</div>
+              <div><b>{t('Present')}:</b> {adv.extras.murmur?.present ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
+              <div><b>{t('Phase')}:</b> {adv.extras.murmur?.phase || '—'}</div>
+              <div><b>{t('GradeProxy')}:</b> {adv.extras.murmur?.gradeProxy ?? '—'}</div>
+              <div><b>{t('Confidence')}:</b> {adv.extras.murmur?.confidence!=null ? Math.round(adv.extras.murmur.confidence*100) : '—'}%</div>
+              <div><b>{t('SysCoverage')}:</b> {adv.extras.murmur?.systolic?.coverage!=null ? Math.round(adv.extras.murmur.systolic.coverage*100): '—'}%</div>
+              <div><b>{t('SysShape')}:</b> {adv.extras.murmur?.systolic?.shape || '—'}</div>
+              <div><b>{t('SysPitch')}:</b> {adv.extras.murmur?.systolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+              <div><b>{t('DiaCoverage')}:</b> {adv.extras.murmur?.diastolic?.coverage!=null ? Math.round(adv.extras.murmur.diastolic.coverage*100): '—'}%</div>
+              <div><b>{t('DiaShape')}:</b> {adv.extras.murmur?.diastolic?.shape || '—'}</div>
+              <div><b>{t('DiaPitch')}:</b> {adv.extras.murmur?.diastolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
             </div>
             {/* Rhythm */}
-            <div>
-              <div style={{ fontWeight:600, marginBottom:6 }}>节律</div>
-              <div><b>RR 变异系数:</b> {adv.extras.rhythm?.rrCV?.toFixed?.(3) || '—'}</div>
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div style={{ fontWeight:600, marginBottom:6 }}>{t('RhythmLabel')}</div>
+              <div><b>{t('RRCV')}:</b> {adv.extras.rhythm?.rrCV?.toFixed?.(3) || '—'}</div>
               <div><b>pNN50:</b> {adv.extras.rhythm?.pNN50?.toFixed?.(2) || '—'}</div>
-              <div><b>样本熵:</b> {adv.extras.rhythm?.sampleEntropy?.toFixed?.(2) || '—'}</div>
-              <div><b>SD1/SD2:</b> {adv.extras.rhythm?.poincareSD1?.toFixed?.(3) || '—'} / {adv.extras.rhythm?.poincareSD2?.toFixed?.(3) || '—'}</div>
-              <div><b>AF 可疑:</b> {adv.extras.rhythm?.afSuspected ? '是' : '否'}</div>
-              <div><b>早搏可疑:</b> {adv.extras.rhythm?.ectopySuspected ? '是' : '否'}</div>
+              <div><b>{t('SampleEntropy')}:</b> {adv.extras.rhythm?.sampleEntropy?.toFixed?.(2) || '—'}</div>
+              <div><b>{t('PoincareSD12')}:</b> {adv.extras.rhythm?.poincareSD1?.toFixed?.(3) || '—'} / {adv.extras.rhythm?.poincareSD2?.toFixed?.(3) || '—'}</div>
+              <div><b>AF:</b> {adv.extras.rhythm?.afSuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
+              <div><b>{lang==='zh'?'早搏':'' || 'Ectopy'}:</b> {adv.extras.rhythm?.ectopySuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
             </div>
           </div>
         </>

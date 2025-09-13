@@ -970,7 +970,11 @@ export default function AnalysisDetail({ params }) {
         )}
       </div>
       {/* Sub-title: Waveform */}
-      <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px' }}>{t('Waveform')}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px', display:'flex', alignItems:'center', gap:8 }}>
+        {/* waveform icon */}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12h3l2-6 3 12 2-6h8" stroke="#0f172a" strokeWidth="1.5"/></svg>
+        <span>{t('Waveform')}</span>
+      </div>
       {meta && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
           <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
@@ -1079,7 +1083,11 @@ export default function AnalysisDetail({ params }) {
       {/* Clinical PCG Analysis */}
       {adv && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('ClinicalAnalysis')}</div>
+          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', gap:8 }}>
+            {/* stethoscope icon */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+            <span>{t('ClinicalAnalysis')}</span>
+          </div>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             <div><b>{t('HeartRate')}:</b> {adv.hrBpm ? adv.hrBpm.toFixed(0) : '—'}</div>
@@ -1209,7 +1217,11 @@ export default function AnalysisDetail({ params }) {
 
       {(features || extra) && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Features')}</div>
+          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', gap:8 }}>
+            {/* sliders icon */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7h12M4 17h12M16 7v-2M8 17v2M12 12h8M12 12v-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+            <span>{t('Features')}</span>
+          </div>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
             {features && (
@@ -1238,7 +1250,11 @@ export default function AnalysisDetail({ params }) {
 
       {/* AI Analysis */}
       <div style={{ display:'flex', alignItems:'center', gap:8, margin:'12px 0 6px' }}>
-        <div style={{ fontSize: 18, fontWeight: 600 }}>{t('AIAnalysis')}</div>
+        <div style={{ fontSize: 18, fontWeight: 600, display:'flex', alignItems:'center', gap:8 }}>
+          {/* sparkles icon */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z" stroke="#0f172a" strokeWidth="1.2"/></svg>
+          <span>{t('AIAnalysis')}</span>
+        </div>
         {aiText && (
           <button onClick={()=> setChatOpen(true)} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
             {t('StartConversation')}

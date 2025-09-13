@@ -638,6 +638,59 @@ def _find_peaks(x: np.ndarray, distance: int, threshold: float):
     return peaks
 
 
+def _tkeo(x: np.ndarray) -> np.ndarray:
+    x = x.astype(np.float32, copy=False)
+    if len(x) < 3:
+        return np.zeros_like(x)
+    y = np.zeros_like(x)
+    y[1:-1] = x[1:-1] * x[1:-1] - x[:-2] * x[2:]
+    return np.maximum(0.0, y)
+
+
+def _shannon_envelope(x: np.ndarray, sr: int, smooth_ms: float = 50.0) -> np.ndarray:
+    # Shannon energy operator: -x^2 * log(x^2)
+    e = x.astype(np.float32, copy=False)
+    e = e * e
+    e = -(e * (np.log(e + 1e-9)))
+    win = max(1, int(round(smooth_ms * 1e-3 * sr)))
+    w = np.ones(win, dtype=np.float32) / float(win)
+    return np.convolve(e, w, mode='same')
+
+
+def _respiration_from_env(env: np.ndarray, sr: int):
+    # Downsample env to ~20 Hz then estimate dominant frequency 0.08–0.8 Hz
+    target = 20
+    k = max(1, int(round(sr / target)))
+    z = env[::k].astype(np.float32, copy=False)
+    fs = sr / k
+    n = len(z)
+    nfft = 1 << int(np.ceil(np.log2(max(64, n))))
+    spec = np.abs(np.fft.rfft(z * np.hanning(len(z)), n=nfft))
+    freqs = np.fft.rfftfreq(nfft, d=1.0 / fs)
+    band = (freqs >= 0.08) & (freqs <= 0.8)
+    if not np.any(band):
+        return None, z, fs
+    fi = np.argmax(spec[band])
+    freq = float(freqs[band][fi])
+    rate = freq * 60.0
+    return rate, z, fs
+
+
+def _corr_at_events(series: np.ndarray, fs: float, event_idx: list) -> float:
+    if not event_idx or len(event_idx) < 3:
+        return 0.0
+    t = np.array(event_idx, dtype=np.int64) / fs
+    # sample series at event times using nearest index
+    idx = np.clip((t * fs).astype(np.int64), 0, len(series) - 1)
+    vals = series[idx]
+    # correlate consecutive pairs against linear ramp
+    x = np.arange(len(vals), dtype=np.float32)
+    if np.std(vals) < 1e-6:
+        return 0.0
+    r = float(np.corrcoef(x, vals)[0, 1])
+    return r
+
+
 @app.post('/pcg_advanced')
 async def pcg_advanced(
     sampleRate: int = Body(...),
@@ -882,6 +935,244 @@ async def pcg_advanced(
 
     usable_pct = float(np.mean(env > (np.median(env)+0.1*np.std(env))))
 
+    # Respiratory rate estimation and S2 split typing
+    resp_rate = None; split_type = None; split_corr = None
+    try:
+        # Use a smoothed envelope to estimate respiration
+        env_lf2 = _moving_average(env, max(1, int(0.5 * sr)))
+        rr_est, env_ds, fs_ds = _respiration_from_env(env_lf2, sr)
+        if rr_est:
+            resp_rate = float(rr_est)
+        # Correlate S2 split with respiration envelope sampled at S2 indices
+        if s2_splits and s2_idx:
+            split_corr = _corr_at_events(env_ds, fs_ds, s2_idx[:len(env_ds)])
+            ms = np.array(s2_splits, dtype=np.float32)
+            mean_split = float(np.median(ms)) if len(ms) else None
+            std_split = float(np.std(ms)) if len(ms) else None
+            if mean_split:
+                if mean_split > 50.0:
+                    split_type = 'wide'
+                elif std_split is not None and std_split < 10.0 and mean_split > 30.0:
+                    split_type = 'fixed'
+                elif split_corr is not None and split_corr > 0.2:
+                    split_type = 'physiologic'
+                elif split_corr is not None and split_corr < -0.2:
+                    split_type = 'paradoxical'
+                else:
+                    split_type = 'indeterminate'
+    except Exception:
+        pass
+
+    # Additional sounds: S3/S4 detection using low-band energy + TKEO in specific windows
+    def _detect_extra_sounds():
+        s3_hits=0; s4_hits=0; s3_scores=[]; s4_scores=[]
+        ec_hits=0; msc_hits=0; os_hits=len(a2_os)
+        ec_scores=[]; msc_scores=[]
+        # Precompute helper envelopes
+        tke = _tkeo(y)
+        for j in range(min(len(s1_idx), len(s2_idx))):
+            s1i = s1_idx[j]; s2i = s2_idx[j]
+            # S3: 80–200 ms after S2
+            w3a = s2i + int(0.08*sr); w3b = min(n, s2i + int(0.20*sr))
+            if w3b - w3a > int(0.03*sr):
+                seg = y[w3a:w3b]
+                e_low = _welch_band_power(seg, sr, 20, 100)
+                base = _welch_band_power(y[max(0,w3b-int(0.2*sr)):w3b], sr, 20, 100)
+                score = e_low / (base + 1e-9)
+                if score > 2.5:
+                    s3_hits += 1; s3_scores.append(score)
+            # S4: 60–120 ms before S1
+            w4a = max(0, s1i - int(0.12*sr)); w4b = max(0, s1i - int(0.06*sr))
+            if w4b - w4a > int(0.03*sr):
+                seg = y[w4a:w4b]
+                e_low = _welch_band_power(seg, sr, 20, 100)
+                base = _welch_band_power(y[w4a:max(0,w4a-int(0.2*sr))], sr, 20, 100)
+                score = e_low / (base + 1e-9)
+                if score > 2.5:
+                    s4_hits += 1; s4_scores.append(score)
+            # Ejection click: 20–60 ms after S1, HF transient
+            eca = s1i + int(0.02*sr); ecb = min(n, s1i + int(0.06*sr))
+            if ecb - eca > int(0.01*sr):
+                seg = tke[eca:ecb]
+                if seg.size:
+                    z = (seg - np.median(seg)) / (np.std(seg)+1e-9)
+                    sc = float(np.max(z))
+                    if sc > 3.0:
+                        ec_hits += 1; ec_scores.append(sc)
+            # Mid-systolic click: mid of systole ±10ms
+            if s2i > s1i:
+                mid = s1i + int(0.5 * (s2i - s1i))
+                msa = max(0, mid - int(0.01*sr)); msb = min(n, mid + int(0.01*sr))
+                if msb > msa:
+                    seg = tke[msa:msb]
+                    z = (seg - np.median(seg)) / (np.std(seg)+1e-9)
+                    sc = float(np.max(z))
+                    if sc > 3.0:
+                        msc_hits += 1; msc_scores.append(sc)
+        cycles = max(1, min(len(s1_idx), len(s2_idx)))
+        return {
+            's3Prob': float(min(1.0, s3_hits / cycles)),
+            's4Prob': float(min(1.0, s4_hits / cycles)),
+            's3Cycles': int(s3_hits),
+            's4Cycles': int(s4_hits),
+            'ejectionClickProb': float(min(1.0, ec_hits / cycles)),
+            'midSystolicClickProb': float(min(1.0, msc_hits / cycles)),
+            'openingSnapProb': float(min(1.0, len(a2_os) / max(1,len(s2_idx))))
+        }
+
+    extras_sounds = _detect_extra_sounds()
+
+    # Murmur characterization
+    def _murmur_characterization():
+        sys_present=False; dia_present=False
+        sys_shape_local=None; dia_shape_local=None
+        sys_pitch=None; dia_pitch=None
+        sys_ratio=None; dia_ratio=None
+        cover = 0.0
+        # For each cycle compute high-band energy envelope and decide
+        shapes=[]; pitches=[]; coverages=[]; ratios=[]
+        for j in range(min(len(s1_idx), len(s2_idx))):
+            s1i = s1_idx[j]; s2i = s2_idx[j]
+            if s2i <= s1i: continue
+            seg = y[s1i:s2i]
+            # frame-based energy in 150–400 Hz
+            hop = max(8, int(0.01*sr)); win = max(16, int(0.02*sr))
+            e=[]; cents=[]
+            for k in range(0, len(seg)-win, hop):
+                wseg = seg[k:k+win] * np.hanning(win)
+                sp = np.abs(np.fft.rfft(wseg))
+                freqs = np.fft.rfftfreq(win, 1.0/sr)
+                m = (freqs>=150)&(freqs<=400)
+                pw = (sp[m]**2).sum()
+                e.append(pw)
+                if pw>0:
+                    cents.append((freqs[m]*(sp[m]**2)).sum()/pw)
+            if len(e)<3: continue
+            e = np.array(e, dtype=np.float32)
+            e = e/(np.max(e)+1e-9)
+            # threshold by median+0.3*std
+            th = float(np.median(e)+0.3*np.std(e))
+            active = e>th
+            frac = float(np.mean(active))
+            if frac>0.3:
+                sys_present=True
+                coverages.append(frac)
+                # shape via slope
+                slope = float(np.polyfit(np.linspace(0,1,len(e)), e, 1)[0])
+                if slope>0.05: shapes.append('crescendo')
+                elif slope<-0.05: shapes.append('decrescendo')
+                else: shapes.append('plateau')
+                if cents:
+                    pitches.append(float(np.median(cents)))
+                # ratio
+                be = band_power_whole(150,400)
+                le = band_power_whole(20,150)
+                if le>0: ratios.append(float(be/le))
+        if shapes:
+            # pick most common
+            sys_shape_local = max(set(shapes), key=shapes.count)
+        if pitches:
+            sys_pitch = float(np.median(pitches))
+        if ratios:
+            sys_ratio = float(np.median(ratios))
+        if coverages:
+            cover = float(np.median(coverages))
+        # Diastolic (same steps)
+        dshapes=[]; dpitches=[]; dratios=[]; dcover=[]
+        for j in range(min(len(s1_idx)-1, len(s2_idx))):
+            s2i = s2_idx[j]; s1n = s1_idx[j+1]
+            if s1n <= s2i: continue
+            seg = y[s2i:s1n]
+            hop = max(8, int(0.01*sr)); win = max(16, int(0.02*sr))
+            e=[]; cents=[]
+            for k in range(0, len(seg)-win, hop):
+                wseg = seg[k:k+win] * np.hanning(win)
+                sp = np.abs(np.fft.rfft(wseg))
+                freqs = np.fft.rfftfreq(win, 1.0/sr)
+                m = (freqs>=150)&(freqs<=400)
+                pw = (sp[m]**2).sum()
+                e.append(pw)
+                if pw>0:
+                    cents.append((freqs[m]*(sp[m]**2)).sum()/pw)
+            if len(e)<3: continue
+            e = np.array(e, dtype=np.float32); e = e/(np.max(e)+1e-9)
+            th = float(np.median(e)+0.3*np.std(e))
+            active = e>th
+            frac = float(np.mean(active))
+            if frac>0.3:
+                dia_present=True; dcover.append(frac)
+                slope = float(np.polyfit(np.linspace(0,1,len(e)), e, 1)[0])
+                if slope>0.05: dshapes.append('crescendo')
+                elif slope<-0.05: dshapes.append('decrescendo')
+                else: dshapes.append('plateau')
+                if cents: dpitches.append(float(np.median(cents)))
+                be = band_power_whole(150,400); le = band_power_whole(20,150)
+                if le>0: dratios.append(float(be/le))
+        if dshapes:
+            dia_shape_local = max(set(dshapes), key=dshapes.count)
+        if dpitches:
+            dia_pitch = float(np.median(dpitches))
+        if dratios:
+            dia_ratio = float(np.median(dratios))
+        dcover_m = float(np.median(dcover)) if dcover else 0.0
+        return {
+            'present': bool(sys_present or dia_present),
+            'phase': ('systolic' if sys_present else '') + ('/diastolic' if dia_present else ''),
+            'systolic': {
+                'present': bool(sys_present),
+                'extent': 'holo' if cover>0.8 else ('early' if cover<=0.4 else ('mid' if cover<=0.6 else 'late')),
+                'shape': sys_shape_local,
+                'pitchHz': sys_pitch,
+                'bandRatio': sys_ratio,
+                'coverage': cover,
+            },
+            'diastolic': {
+                'present': bool(dia_present),
+                'extent': 'holo' if dcover_m>0.8 else ('early' if dcover_m<=0.4 else ('mid' if dcover_m<=0.6 else 'late')),
+                'shape': dia_shape_local,
+                'pitchHz': dia_pitch,
+                'bandRatio': dia_ratio,
+                'coverage': dcover_m,
+            }
+        }
+
+    extras_murmur = _murmur_characterization()
+
+    # Rhythm screening: AF/ectopy suspicion using RR series
+    af_suspected=False; ectopy_suspected=False
+    rr_cv = float(np.std(rr)/ (np.mean(rr)+1e-9)) if len(rr) else None
+    pnn50 = None
+    sampen = None
+    sd1 = None; sd2 = None
+    if len(rr):
+        diffs = np.abs(np.diff(rr))
+        pnn50 = float(np.mean(diffs > 0.05))
+        # Poincare
+        sd1 = float(np.sqrt(0.5*np.var(np.diff(rr))))
+        sd2 = float(np.sqrt(2*np.var(rr) - 0.5*np.var(np.diff(rr)))) if len(rr)>1 else None
+        # Approximate sample entropy (m=2, r=0.2*std)
+        try:
+            r = 0.2*np.std(rr) + 1e-9
+            def _phi(m):
+                N=len(rr)
+                if N<=m+1: return 0.0
+                count=0; total=0
+                for i in range(N-m):
+                    for j in range(i+1, N-m):
+                        if np.max(np.abs(rr[i:i+m]-rr[j:j+m]))<r:
+                            count+=1
+                    total += (N-m-1-i)
+                return count/(total+1e-9)
+            a=_phi(2); b=_phi(3)
+            sampen = float(-np.log((b+1e-12)/(a+1e-12)))
+        except Exception:
+            sampen=None
+        # Rules of thumb (screening only)
+        if (rr_cv and rr_cv>0.2) and (pnn50 and pnn50>0.2) and (sampen and sampen>0.5):
+            af_suspected=True
+        if (pnn50 and 0.1<pnn50<0.3) and (rr_cv and rr_cv>0.12) and not af_suspected:
+            ectopy_suspected=True
+
     _result = {
         'durationSec': dur,
         'hrBpm': float(hr_bpm) if hr_bpm else None,
@@ -906,6 +1197,24 @@ async def pcg_advanced(
         'events': {
             's1': s1_idx[:200],
             's2': s2_idx[:200]
+        },
+        'extras': {
+            'respiration': {
+                'respRate': resp_rate,
+                's2SplitType': split_type,
+                's2SplitCorr': float(split_corr) if split_corr is not None else None
+            },
+            'additionalSounds': extras_sounds,
+            'murmur': extras_murmur,
+            'rhythm': {
+                'rrCV': rr_cv,
+                'pNN50': pnn50,
+                'sampleEntropy': sampen,
+                'poincareSD1': sd1,
+                'poincareSD2': sd2,
+                'afSuspected': af_suspected,
+                'ectopySuspected': ectopy_suspected
+            }
         }
     }
     _t1_all = _time.perf_counter()

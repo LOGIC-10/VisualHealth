@@ -54,6 +54,12 @@ export default function AnalysisDetail({ params }) {
   const [openSounds, setOpenSounds] = useState(true);
   const [openMurmur, setOpenMurmur] = useState(true);
   const [openRhythm, setOpenRhythm] = useState(true);
+  const [openWave, setOpenWave] = useState(true);
+  const [openSpec, setOpenSpec] = useState(true);
+  const [openClinical, setOpenClinical] = useState(true);
+  const [openFeatures, setOpenFeatures] = useState(true);
+  const [openExtras, setOpenExtras] = useState(true);
+  const [openAI, setOpenAI] = useState(true);
   // Gain control
   const [gainOpen, setGainOpen] = useState(false);
   const [gainOn, setGainOn] = useState(false);
@@ -970,12 +976,17 @@ export default function AnalysisDetail({ params }) {
         )}
       </div>
       {/* Sub-title: Waveform */}
-      <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px', display:'flex', alignItems:'center', gap:8 }}>
-        {/* waveform icon */}
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12h3l2-6 3 12 2-6h8" stroke="#0f172a" strokeWidth="1.5"/></svg>
-        <span>{t('Waveform')}</span>
+      <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {/* waveform icon */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12h3l2-6 3 12 2-6h8" stroke="#0f172a" strokeWidth="1.5"/></svg>
+          <span>{t('Waveform')}</span>
+        </div>
+        <div title={openWave? t('Collapse') : t('Expand')} className={"vh-arrow "+(openWave?"vh-rot":"")} onClick={()=>setOpenWave(v=>!v)}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+        </div>
       </div>
-      {meta && (
+      {openWave && meta && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
           <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
           {audioUrl && (
@@ -999,12 +1010,12 @@ export default function AnalysisDetail({ params }) {
       )}
 
       {/* Waveform (client-rendered, smooth) */}
-      { (loading.adv || loading.spec) && (
+      { openWave && (loading.adv || loading.spec) && (
         <div style={{ marginTop:8, height:6, background:'#e5e7eb', borderRadius:6, overflow:'hidden' }}>
           <div style={{ width: `${Math.round(Math.min(1, progress)*100)}%`, height:'100%', background:'#2563eb', transition:'width 200ms linear' }} />
         </div>
       )}
-      {audioError ? (
+      {openWave && (audioError ? (
         <div style={{ padding:12, color:'#b91c1c', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12 }}>
           {audioError}
         </div>
@@ -1050,18 +1061,29 @@ export default function AnalysisDetail({ params }) {
           {/* Red time label near playhead */}
           <div ref={playLabelRef} style={{ position:'absolute', top: 6, transform:'translateX(-50%)', padding:'2px 6px', fontSize:12, color:'#ef4444', background:'rgba(255,255,255,0.9)', border:'1px solid #fecaca', borderRadius:6, pointerEvents:'none' }} />
         </div>
-      )}
+      ))}
 
       {/* Timeline under waveform */}
-      <div ref={timelineRef} style={{ width:'100%', height: 26, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, borderTopLeftRadius:0, borderTopRightRadius:0, borderTop:'none' }} />
+      {openWave && (
+        <div ref={timelineRef} style={{ width:'100%', height: 26, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, borderTopLeftRadius:0, borderTopRightRadius:0, borderTop:'none' }} />
+      )}
 
-      {audioUrl && (
+      {openWave && audioUrl && (
         <audio ref={audioRef} controls src={audioUrl} style={{ marginTop: 8, width:'100%' }} />
       )}
 
       {/* Sub-title: Spectrogram */}
-      <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Spectrogram')}</div>
+      <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 18V8M8 18V4M12 18V10M16 18V6M20 18V12" stroke="#0f172a" strokeWidth="1.5"/></svg>
+          <span>{t('Spectrogram')}</span>
+        </div>
+        <div title={openSpec? t('Collapse') : t('Expand')} className={"vh-arrow "+(openSpec?"vh-rot":"")} onClick={()=>setOpenSpec(v=>!v)}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+        </div>
+      </div>
       {/* Static spectrogram below playback bar (colored, with axes) */}
+      {openSpec && (
       <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', minHeight: 200, position:'relative' }}>
         {!specUrl && (
           <div style={{ position:'absolute', inset:0, display:'grid', placeItems:'center', color:'#64748b' }}>
@@ -1070,6 +1092,7 @@ export default function AnalysisDetail({ params }) {
         )}
         {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
       </div>
+      )}
       <style>{`.vh-spin{width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
       <style>{`
         .vh-range{ -webkit-appearance:none; appearance:none; height:6px; background:#e5e7eb; border-radius:9999px; outline:none; }
@@ -1079,15 +1102,25 @@ export default function AnalysisDetail({ params }) {
         .vh-range::-moz-range-track{ height:6px; background:#e5e7eb; border-radius:9999px; }
         .vh-range::-moz-range-thumb{ width:14px; height:14px; border:none; border-radius:9999px; background:#94a3b8; }
       `}</style>
+      <style>{`
+        .vh-arrow{ opacity:0; transition: opacity 120ms ease, transform 120ms ease; cursor:pointer; }
+        .vh-sec-head:hover .vh-arrow{ opacity:1; }
+        .vh-rot{ transform: rotate(90deg); }
+      `}</style>
 
       {/* Clinical PCG Analysis */}
       {adv && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', gap:8 }}>
-            {/* stethoscope icon */}
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
-            <span>{t('ClinicalAnalysis')}</span>
+          <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+              <span>{t('ClinicalAnalysis')}</span>
+            </div>
+            <div title={openClinical? t('Collapse'):t('Expand')} className={"vh-arrow "+(openClinical?"vh-rot":"")} onClick={()=>setOpenClinical(v=>!v)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+            </div>
           </div>
+          {openClinical && (
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             <div><b>{t('HeartRate')}:</b> {adv.hrBpm ? adv.hrBpm.toFixed(0) : '—'}</div>
@@ -1112,13 +1145,22 @@ export default function AnalysisDetail({ params }) {
           </div>
             <div style={{ gridColumn:'1 / -1', marginTop: 6, fontSize: 12, color:'#64748b' }}>{t('Disclaimer')}</div>
           </div>
+          )}
         </>
       )}
 
       {adv?.extras && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Extras')}</div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+          <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke="#0f172a" strokeWidth="1.2"/></svg>
+              <span>{t('Extras')}</span>
+            </div>
+            <div title={openExtras? t('Collapse') : t('Expand')} className={"vh-arrow "+(openExtras?"vh-rot":"")} onClick={()=>setOpenExtras(v=>!v)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+            </div>
+          </div>
+          <div style={{ display: openExtras ? 'grid' : 'none', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             {/* Respiration & S2 split typing */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
@@ -1127,9 +1169,9 @@ export default function AnalysisDetail({ params }) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3v8c0 1.657-1.343 3-3 3H4a3 3 0 0 1-3-3V9c0-1.105.895-2 2-2h1c.552 0 1 .448 1 1v3" stroke="#0f172a" strokeWidth="1.5"/><path d="M15 3v8c0 1.657 1.343 3 3 3h2a3 3 0 0 0 3-3V9c0-1.105-.895-2-2-2h-1c-.552 0-1 .448-1 1v3" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('RespAndSplit')}</span>
                 </div>
-                <button onClick={()=>setOpenResp(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
-                  {openResp ? t('Collapse') : t('Expand')}
-                </button>
+                <div title={openResp? t('Collapse') : t('Expand')} className={"vh-arrow "+(openResp?"vh-rot":"")} onClick={()=>setOpenResp(v=>!v)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+                </div>
               </div>
               {openResp && (
                 <>
@@ -1148,9 +1190,9 @@ export default function AnalysisDetail({ params }) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12c2 0 2-6 4-6s2 12 4 12 2-12 4-12 2 6 4 6" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('AdditionalSounds')}</span>
                 </div>
-                <button onClick={()=>setOpenSounds(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
-                  {openSounds ? t('Collapse') : t('Expand')}
-                </button>
+                <div title={openSounds? t('Collapse') : t('Expand')} className={"vh-arrow "+(openSounds?"vh-rot":"")} onClick={()=>setOpenSounds(v=>!v)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+                </div>
               </div>
               {openSounds && (
                 <>
@@ -1169,9 +1211,9 @@ export default function AnalysisDetail({ params }) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('MurmurScreening')}</span>
                 </div>
-                <button onClick={()=>setOpenMurmur(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
-                  {openMurmur ? t('Collapse') : t('Expand')}
-                </button>
+                <div title={openMurmur? t('Collapse') : t('Expand')} className={"vh-arrow "+(openMurmur?"vh-rot":"")} onClick={()=>setOpenMurmur(v=>!v)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+                </div>
               </div>
               {openMurmur && (
                 <>
@@ -1196,9 +1238,9 @@ export default function AnalysisDetail({ params }) {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2-5 3 10 2-5h5" stroke="#0f172a" strokeWidth="1.5"/><path d="M4 7a5 5 0 0 1 8-1 5 5 0 0 1 8 1c0 7-8 10-8 10S4 14 4 7z" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('RhythmLabel')}</span>
                 </div>
-                <button onClick={()=>setOpenRhythm(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
-                  {openRhythm ? t('Collapse') : t('Expand')}
-                </button>
+                <div title={openRhythm? t('Collapse') : t('Expand')} className={"vh-arrow "+(openRhythm?"vh-rot":"")} onClick={()=>setOpenRhythm(v=>!v)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="#2563eb"><path d="M8 5l8 7-8 7z"/></svg>
+                </div>
               </div>
               {openRhythm && (
                 <>

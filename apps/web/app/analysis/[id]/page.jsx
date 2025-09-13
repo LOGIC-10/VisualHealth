@@ -48,6 +48,7 @@ export default function AnalysisDetail({ params }) {
   const [aiErr, setAiErr] = useState('');
   const [aiSubmitted, setAiSubmitted] = useState(false);
   const [pcmPayload, setPcmPayload] = useState(null);
+  const [useHsmm, setUseHsmm] = useState(false);
   // Gain control
   const [gainOpen, setGainOpen] = useState(false);
   const [gainOn, setGainOn] = useState(false);
@@ -70,6 +71,9 @@ export default function AnalysisDetail({ params }) {
         setNavOffset(h + 16);
       }
     } catch {}
+  }, []);
+  useEffect(() => {
+    try { setUseHsmm(localStorage.getItem('vh_use_hsmm') === '1'); } catch {}
   }, []);
   useEffect(() => {
     const el = contentRef.current; if (!el) return;
@@ -470,13 +474,13 @@ export default function AnalysisDetail({ params }) {
           let resp = null;
           try {
             if (meta?.media_id) {
-              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash }) });
+              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
             }
           } catch {}
           if (!resp || !resp.ok) {
             // Fallback to PCM endpoint
             try {
-              resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash }) });
+              resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, useHsmm }) });
             } catch {}
           }
           const t1 = performance.now();

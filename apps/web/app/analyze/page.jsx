@@ -18,10 +18,14 @@ export default function AnalyzePage() {
   const [navigating, setNavigating] = useState(false);
   const [guestNoticeOpen, setGuestNoticeOpen] = useState(false);
   const [guestErr, setGuestErr] = useState('');
+  const [useHsmm, setUseHsmm] = useState(false);
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
     setToken(t || ''); // empty string means visitor
+  }, []);
+  useEffect(() => {
+    try { setUseHsmm(localStorage.getItem('vh_use_hsmm') === '1'); } catch {}
   }, []);
 
   // Warn guests about leaving the page (analysis will be discarded)
@@ -105,7 +109,7 @@ export default function AnalyzePage() {
         try {
           const payload = { sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) };
           const [advResp, specResp] = await Promise.all([
-            fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }),
+            fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
             fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
           ]);
           let specId = null; let adv = null;
@@ -145,7 +149,13 @@ export default function AnalyzePage() {
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('NewAnalysis')}</h1>
-      <input type="file" accept="audio/*" onChange={handleFile} />
+      <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <input type="file" accept="audio/*" onChange={handleFile} />
+        <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:14 }}>
+          <input type="checkbox" checked={useHsmm} onChange={e=>{ setUseHsmm(e.target.checked); try { localStorage.setItem('vh_use_hsmm', e.target.checked ? '1' : '0'); } catch {} }} />
+          使用 HSMM 分割（实验特性）
+        </label>
+      </div>
       {/* Guest notice and actions */}
       {!token && guestNoticeOpen && (
         <div style={{ marginTop:12, padding:12, border:'1px solid #e5e7eb', borderRadius:12, background:'#fff' }}>

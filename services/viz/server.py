@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body, Header
 from fastapi.responses import Response, JSONResponse
 from ai_heart import analyze_pcg_from_pcm
+from pcg_hsmm import segment_pcg_hsmm
 import httpx
 from scipy.io import wavfile
 
@@ -406,7 +407,12 @@ async def pcg_advanced_media(
     # Build a minimal shim: call analyze_pcg_from_pcm for hard metrics? keep our heuristic version
     # Here we call the same code path as pcg_advanced (heuristic)
     # To avoid duplicate implementation, we call the function below inline (copy kept in file)
-    return await pcg_advanced(sampleRate=sr, pcm=y.tolist(), hash=cache_hash, authorization=authorization)
+    useHsmm = False
+    try:
+        useHsmm = bool(payload.get('useHsmm'))
+    except Exception:
+        useHsmm = False
+    return await pcg_advanced(sampleRate=sr, pcm=y.tolist(), hash=cache_hash, useHsmm=useHsmm, authorization=authorization)
 
 
 @app.post('/hard_algo_metrics_media')
@@ -511,6 +517,7 @@ async def pcg_advanced(
     sampleRate: int = Body(...),
     pcm: List[float] = Body(...),
     hash: Optional[str] = Body(None),
+    useHsmm: bool = Body(False),
     authorization: Optional[str] = Header(default=None, convert_underscores=False)
 ):
     # Heuristic CPU-only PCG analysis modules (baseline, non-diagnostic)
@@ -554,34 +561,49 @@ async def pcg_advanced(
         peak_lag = min_lag + lag_idx
     hr_bpm = 60.0 * sr / peak_lag if peak_lag else None
 
-    # Peak picking and S1/S2 assignment
-    thr = max(0.2, float(np.median(env) + 0.5 * np.std(env)))
-    min_dist = int(0.2 * sr)
-    cand = _find_peaks(env, distance=min_dist, threshold=thr)
-    # Assign as alternating S1/S2 using expected cycle
-    s1_idx = []
-    s2_idx = []
-    if hr_bpm:
-        cycle = sr * 60.0 / hr_bpm
+    # Peak picking and S1/S2 assignment (HSMM optional)
+    if useHsmm:
+        try:
+            m = segment_pcg_hsmm(sr, y.tolist())
+            s1_idx = list(map(int, m.get('events', {}).get('s1', []) or []))
+            s2_idx = list(map(int, m.get('events', {}).get('s2', []) or []))
+            if not hr_bpm:
+                hb = m.get('hrBpm')
+                try:
+                    hr_bpm = float(hb) if hb else None
+                except Exception:
+                    pass
+        except Exception:
+            s1_idx = []
+            s2_idx = []
     else:
-        cycle = sr * 0.8
-    i = 0
-    last_was_s1 = True
-    while i < len(cand):
-        if not s1_idx:
-            s1_idx.append(cand[i]); last_was_s1 = True; i += 1; continue
-        dt = cand[i] - (s1_idx[-1] if last_was_s1 else s2_idx[-1])
-        if dt < 0.7 * cycle:  # likely within the same cycle -> S2
-            if last_was_s1:
-                s2_idx.append(cand[i]); last_was_s1 = False
-            else:
+        thr = max(0.2, float(np.median(env) + 0.5 * np.std(env)))
+        min_dist = int(0.2 * sr)
+        cand = _find_peaks(env, distance=min_dist, threshold=thr)
+        # Assign as alternating S1/S2 using expected cycle
+        s1_idx = []
+        s2_idx = []
+        if hr_bpm:
+            cycle = sr * 60.0 / hr_bpm
+        else:
+            cycle = sr * 0.8
+        i = 0
+        last_was_s1 = True
+        while i < len(cand):
+            if not s1_idx:
+                s1_idx.append(cand[i]); last_was_s1 = True; i += 1; continue
+            dt = cand[i] - (s1_idx[-1] if last_was_s1 else s2_idx[-1])
+            if dt < 0.7 * cycle:  # likely within the same cycle -> S2
+                if last_was_s1:
+                    s2_idx.append(cand[i]); last_was_s1 = False
+                else:
+                    s1_idx.append(cand[i]); last_was_s1 = True
+            else:  # new cycle -> S1
                 s1_idx.append(cand[i]); last_was_s1 = True
-        else:  # new cycle -> S1
-            s1_idx.append(cand[i]); last_was_s1 = True
-        i += 1
+            i += 1
 
-    s1_idx = sorted(set(s1_idx))
-    s2_idx = sorted(set(s2_idx))
+        s1_idx = sorted(set(s1_idx))
+        s2_idx = sorted(set(s2_idx))
 
     # Cycle metrics
     rr = []
@@ -791,3 +813,30 @@ async def hard_algo_metrics(
 
 
 # LLM-related endpoints have been moved to a dedicated llm-service
+
+
+@app.post('/pcg_segment_hsmm')
+async def pcg_segment_hsmm(
+    sampleRate: int = Body(...),
+    pcm: List[float] = Body(...),
+):
+    try:
+        m = segment_pcg_hsmm(sampleRate, pcm)
+        return JSONResponse(content=m)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post('/pcg_segment_hsmm_media')
+async def pcg_segment_hsmm_media(
+    mediaId: str = Body(...),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
+):
+    try:
+        sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
+        m = segment_pcg_hsmm(sr, y.tolist())
+        return JSONResponse(content=m)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)

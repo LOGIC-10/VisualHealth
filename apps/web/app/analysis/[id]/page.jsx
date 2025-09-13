@@ -1320,11 +1320,14 @@ export default function AnalysisDetail({ params }) {
               // Persist to analysis record for this language
               const ts = new Date().toISOString();
               try {
-                await fetch(ANALYSIS_BASE + `/records/${id}`, {
-                  method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
-                  body: JSON.stringify({ ai: { model: j?.model || 'llm', texts: { [lang]: text } }, aiGeneratedAt: ts })
+                const sv = await fetch(ANALYSIS_BASE + `/records/${id}/ai`, {
+                  method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ lang, text, model: j?.model || 'llm' })
                 });
-                setMeta(m => ({ ...(m||{}), ai: { ...((m&&m.ai)||{}), texts: { ...(((m&&m.ai)&&m.ai.texts)||{}), [lang]: text } }, ai_generated_at: ts }));
+                const svj = await sv.json().catch(()=>({}));
+                if (sv.ok && svj?.ai) {
+                  setMeta(m => ({ ...(m||{}), ai: svj.ai, ai_generated_at: svj.ai_generated_at }));
+                }
               } catch {}
             }catch(e){ setAiErr((e?.message)||'AI analysis failed'); }
             finally{ setAiBusy(false); }

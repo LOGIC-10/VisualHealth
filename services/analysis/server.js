@@ -287,162 +287,6 @@ app.delete('/records/:id', async (req, res) => {
 init().then(() => app.listen(PORT, () => console.log(`analysis-service on :${PORT}`)));
 
 // Start AI analysis in background and persist result
-app.post('/records/:id/ai_start', async (req, res) => {
-  try {
-    const payload = verify(req);
-    const userId = payload?.sub;
-    const { sampleRate, pcm, lang } = req.body || {};
-    if (!userId) return res.status(401).json({ error: 'unauthorized' });
-    // ensure record belongs to user and get media id
-    const rec = await pool.query('SELECT id, media_id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
-    if (!rec.rowCount) return res.status(404).json({ error: 'not found' });
-    const mediaId = rec.rows[0].media_id;
-
-    // Idempotency: prevent duplicate background runs for same lang
-    const L = lang || 'zh';
-    try {
-      const ex = await pool.query('SELECT ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
-      let aiObj = {};
-      try { aiObj = ex.rows[0]?.ai || {}; } catch {}
-      aiObj.texts = aiObj.texts || {};
-      aiObj.pending = aiObj.pending || {};
-      if (aiObj.texts[L] && aiObj.texts[L].length > 0) {
-        return res.status(202).json({ started: false, already: true });
-      }
-      if (aiObj.pending[L]) {
-        return res.status(202).json({ started: false, pending: true });
-      }
-      // mark pending and persist immediately to block duplicates
-      aiObj.pending[L] = true;
-      await pool.query('UPDATE analysis_records SET ai=$1 WHERE id=$2 AND user_id=$3', [ aiObj, req.params.id, userId ]);
-    } catch(e) {
-      // non-fatal; continue
-    }
-
-    res.status(202).json({ started: true });
-
-    // background task
-    (async () => {
-      try {
-        // Gather multi-source metrics for better consistency and context
-        // 1) PCG hard metrics (ai_heart)
-        let heartMetricsResp;
-        if (sampleRate && Array.isArray(pcm) && pcm.length>0) {
-          heartMetricsResp = await fetch(VIZ_BASE + '/hard_algo_metrics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sampleRate, pcm }) });
-        } else {
-          heartMetricsResp = await fetch(VIZ_BASE + '/hard_algo_metrics_media', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: req.headers.authorization || '' }, body: JSON.stringify({ mediaId }) });
-        }
-        const heartMetrics = await heartMetricsResp.json();
-        if (heartMetrics?.error) throw new Error(heartMetrics.error);
-        // 2) Clinical PCG analysis (our heuristic metrics) if available
-        const recNow = await pool.query('SELECT adv, features, media_id FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
-        let advMetrics = recNow.rows[0]?.adv || null;
-        const basicFeatures = recNow.rows[0]?.features || null;
-        const recMediaId = recNow.rows[0]?.media_id;
-
-        // If clinical PCG not present yet, compute it now to include in AI context
-        if (!advMetrics) {
-          try {
-            let resp2 = null;
-            if (sampleRate && Array.isArray(pcm) && pcm.length>0) {
-              resp2 = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate, pcm, useHsmm: USE_HSMM }) });
-            } else if (recMediaId) {
-              resp2 = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers: { 'Content-Type':'application/json', Authorization: req.headers.authorization || '' }, body: JSON.stringify({ mediaId: recMediaId, useHsmm: USE_HSMM }) });
-            }
-            if (resp2 && resp2.ok) {
-              advMetrics = await resp2.json();
-              // Persist and notify via SSE
-              try {
-                await pool.query('UPDATE analysis_records SET adv=$1 WHERE id=$2 AND user_id=$3', [ advMetrics, req.params.id, userId ]);
-                sseBroadcast(req.params.id, 'pcg_done', { adv: advMetrics });
-              } catch {}
-            }
-          } catch {}
-        }
-        // Compose a unified context, prefer clinical PCG when conflicts
-        const metrics = {
-          clinical_pcg: advMetrics || null,
-          ai_heart: heartMetrics || null,
-          features: basicFeatures || null,
-          policy: {
-            prefer: 'clinical_pcg',
-            note: 'When values conflict (e.g., heart rate), prefer clinical_pcg.'
-          }
-        };
-        // Build LLM prompt outside of algorithm service (decoupled)
-        const L = lang || 'zh';
-        let sys, user;
-        if (L === 'zh') {
-          sys = (
-            '你是一名心血管科医生助手。' +
-            '根据给定的心音算法指标，生成非诊断性意见。' +
-            '要求：使用中文，严格按 Markdown 输出，包含清晰的小标题、列表、重点加粗。' +
-            '语气客观谨慎；若证据不足，请明确说明不确定。'
-          );
-          user = (
-            '请基于以下 JSON 指标，按 Markdown 输出三个部分；如同一项在 clinical_pcg 与 ai_heart 存在冲突，请优先采纳 clinical_pcg。\n' +
-            '## 总结\n简要 2-3 句。\n\n' +
-            '## 可能的风险\n若无明显异常，写：未见明显异常。\n\n' +
-            '## 建议\n包含生活方式、是否建议复测、何时就医等。\n\n' +
-            '### 指标\n```json\n' + JSON.stringify(metrics) + '\n```'
-          );
-        } else {
-          sys = (
-            'You are a cardiology assistant.' +
-            ' Based on PCG metrics, produce a non-diagnostic report in English.' +
-            ' Requirements: strictly output Markdown with headings, bullet lists, and bold highlights.' +
-            ' Be clear and cautious; state uncertainty when evidence is insufficient.'
-          );
-          user = (
-            'Using the JSON metrics below, return three Markdown sections. If clinical_pcg and ai_heart conflict on a value (e.g., heart rate), prefer clinical_pcg.\n' +
-            '## Summary\n2–3 sentences.\n\n' +
-            '## Potential Risks\nIf none, say: No obvious abnormality.\n\n' +
-            '## Advice\nLifestyle, whether to retest, and when to see a doctor.\n\n' +
-            '### Metrics\n```json\n' + JSON.stringify(metrics) + '\n```'
-          );
-        }
-        const a = await fetch(LLM_SVC + '/chat', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: [ { role: 'system', content: sys }, { role: 'user', content: user } ], temperature: 0.2 })
-        });
-        const aj = await a.json();
-        if (aj?.error) throw new Error(aj.error);
-        const ts = new Date().toISOString();
-        // merge with existing AI JSON to support multiple languages
-        const ex = await pool.query('SELECT ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
-        let aiObj = {};
-        try { aiObj = ex.rows[0]?.ai || {}; } catch {}
-        aiObj.model = aj.model || aiObj.model;
-        aiObj.metrics = aiObj.metrics || metrics; // keep first metrics
-        aiObj.texts = aiObj.texts || {};
-        aiObj.texts[L] = aj.text || '';
-        aiObj.generated_at = aiObj.generated_at || {};
-        aiObj.generated_at[L] = ts;
-        aiObj.pending = aiObj.pending || {};
-        aiObj.pending[L] = false;
-        await pool.query('UPDATE analysis_records SET ai=$1, ai_generated_at=$2 WHERE id=$3 AND user_id=$4', [ aiObj, ts, req.params.id, userId ]);
-        console.log(`[analysis] AI generated for record ${req.params.id}`);
-      } catch (e) {
-        console.warn('[analysis] AI background task failed:', e?.message || e);
-        // Clear pending flag on failure to allow retry
-        try {
-          const ex2 = await pool.query('SELECT ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
-          let aiObj2 = {};
-          try { aiObj2 = ex2.rows[0]?.ai || {}; } catch {}
-          aiObj2.pending = aiObj2.pending || {};
-          aiObj2.pending[L] = false;
-          aiObj2.last_error = aiObj2.last_error || {};
-          aiObj2.last_error[L] = (e?.message) || String(e);
-          await pool.query('UPDATE analysis_records SET ai=$1 WHERE id=$2 AND user_id=$3', [ aiObj2, req.params.id, userId ]);
-        } catch {}
-      }
-    })();
-
-  } catch (e) {
-    console.error(e);
-    res.status(400).json({ error: 'ai start failed' });
-  }
-});
 
 // List chat messages for a record (owned by user)
 app.get('/records/:id/chat', async (req, res) => {
@@ -523,5 +367,32 @@ app.post('/cache', async (req, res) => {
     res.json(rows[0]);
   } catch (e) {
     res.status(400).json({ error: 'cache upsert failed' });
+  }
+});
+
+
+// Save AI report (client-provided text) for a record and language
+app.post('/records/:id/ai', async (req, res) => {
+  try {
+    const payload = verify(req);
+    const userId = payload?.sub;
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    const { lang, text, model } = req.body || {};
+    const L = (lang || 'zh').trim();
+    const T = (text || '').toString();
+    if (!T) return res.status(400).json({ error: 'text required' });
+    const rec = await pool.query('SELECT id, ai FROM analysis_records WHERE id=$1 AND user_id=$2', [req.params.id, userId]);
+    if (!rec.rowCount) return res.status(404).json({ error: 'not found' });
+    let aiObj = {};
+    try { aiObj = rec.rows[0]?.ai || {}; } catch {}
+    aiObj.model = model || aiObj.model || 'llm';
+    aiObj.texts = aiObj.texts || {};
+    aiObj.texts[L] = T;
+    const ts = new Date().toISOString();
+    const { rows } = await pool.query('UPDATE analysis_records SET ai=$1, ai_generated_at=$2 WHERE id=$3 AND user_id=$4 RETURNING ai, ai_generated_at', [ aiObj, ts, req.params.id, userId ]);
+    return res.json({ ok: true, ai: rows[0].ai, ai_generated_at: rows[0].ai_generated_at });
+  } catch (e) {
+    console.error(e);
+    res.status(400).json({ error: 'ai save failed' });
   }
 });

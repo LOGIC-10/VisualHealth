@@ -46,7 +46,43 @@ VisualHealth — 心音可视化与社区（微服务架构）
   - 同时可调用 media-service /upload 进行加密存储（页面示例已包含上传位点，请按需接入）
 - 波形与频谱：
   - 波形在前端用 wavesurfer.js 可视化。
- - 频谱图可通过 wavesurfer 插件或后续引入服务端生成（此版本优先前端渲染）。
+- 频谱图可通过 wavesurfer 插件或后续引入服务端生成（此版本优先前端渲染）。
+
+Analysis Service（AI 报告保存接口）
+- 背景：AI 分析不再由后端算法计算指标，而是由前端将已有指标（clinical PCG `adv` + 基础特征 `features`）拼接进 prompt 调用 LLM 生成文本。为保持数据一致性与审计，新增专用接口用于保存 AI 报告文本。
+- 接口：`POST /records/:id/ai`
+  - 鉴权：`Authorization: Bearer <token>`（记录必须属于该用户）
+  - 请求体：
+    - `lang`：语言代码（如 `zh`、`en`），默认 `zh`
+    - `text`：AI 生成的 Markdown 文本（必填）
+    - `model`：可选，模型标识（默认 `llm`）
+  - 响应（示例）：
+    ```json
+    {
+      "ok": true,
+      "ai": { "model": "llm", "texts": { "zh": "...markdown..." } },
+      "ai_generated_at": "2025-09-13T04:56:12.345Z"
+    }
+    ```
+  - 错误码：
+    - `401 unauthorized`：缺少/无效 token
+    - `404 not found`：记录不存在或非当前用户
+    - `400 text required`：缺少 `text`
+- cURL 示例：
+  ```bash
+  curl -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+          "lang": "zh",
+          "text": "## 结论\n常规节律……",
+          "model": "gpt-xx"
+        }' \
+    http://localhost:4004/records/<record_id>/ai
+  ```
+- 迁移说明：
+  - 已移除旧接口 `POST /records/:id/ai_start`（后端算法与后台 pending 机制不再使用）。
+  - 前端/客户端流程：先用本地指标构造 prompt 调用 LLM → 拿到文本后调用本接口保存 → UI 读取 `ai.texts[lang]` 展示。
 
 算法评估（可选）
 - 已提供两个脚本用于公共数据集上的离线评估，运行结果会以时间戳 JSON 存于 `evals/` 便于迭代：

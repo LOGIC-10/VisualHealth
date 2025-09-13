@@ -669,11 +669,13 @@ def _respiration_from_env(env: np.ndarray, sr: int):
     freqs = np.fft.rfftfreq(nfft, d=1.0 / fs)
     band = (freqs >= 0.08) & (freqs <= 0.8)
     if not np.any(band):
-        return None, z, fs
-    fi = np.argmax(spec[band])
+        return (None, 0.0), z, fs
+    sb = spec[band]
+    fi = np.argmax(sb)
     freq = float(freqs[band][fi])
     rate = freq * 60.0
-    return rate, z, fs
+    dom = float(sb[fi] / (np.mean(sb) + 1e-9))
+    return (rate, dom), z, fs
 
 
 def _corr_at_events(series: np.ndarray, fs: float, event_idx: list) -> float:
@@ -936,13 +938,14 @@ async def pcg_advanced(
     usable_pct = float(np.mean(env > (np.median(env)+0.1*np.std(env))))
 
     # Respiratory rate estimation and S2 split typing
-    resp_rate = None; split_type = None; split_corr = None
+    resp_rate = None; resp_dom = None; split_type = None; split_corr = None
     try:
         # Use a smoothed envelope to estimate respiration
         env_lf2 = _moving_average(env, max(1, int(0.5 * sr)))
-        rr_est, env_ds, fs_ds = _respiration_from_env(env_lf2, sr)
+        (rr_est, rr_dom), env_ds, fs_ds = _respiration_from_env(env_lf2, sr)
         if rr_est:
             resp_rate = float(rr_est)
+            resp_dom = float(rr_dom)
         # Correlate S2 split with respiration envelope sampled at S2 indices
         if s2_splits and s2_idx:
             split_corr = _corr_at_events(env_ds, fs_ds, s2_idx[:len(env_ds)])
@@ -1137,6 +1140,45 @@ async def pcg_advanced(
         }
 
     extras_murmur = _murmur_characterization()
+    # Add simple grade proxy (0-3) and confidence (0..1)
+    def _grade_and_conf(m):
+        sys = m.get('systolic') or {}; dia = m.get('diastolic') or {}
+        def side(s):
+            cov = float(s.get('coverage') or 0.0); br = float(s.get('bandRatio') or 0.0)
+            return cov * br
+        raw = max(side(sys), side(dia))
+        # thresholds for grades
+        if raw < 0.1: grade = 0
+        elif raw < 0.3: grade = 1
+        elif raw < 0.6: grade = 2
+        else: grade = 3
+        # confidence: bounded by QC and consistency
+        conf = float(min(1.0, max(0.0, (snr_db + 5.0)/15.0))) * float(min(1.0, max(0.0, usable_pct)))
+        return grade, conf
+    grade, mconf = _grade_and_conf(extras_murmur)
+    extras_murmur['gradeProxy'] = int(grade)
+    extras_murmur['confidence'] = float(mconf)
+
+    # S1/S2 durations (width at 25% local peak within ±50ms window)
+    def _event_width_ms(idx_list):
+        ws = []
+        half = int(0.05 * sr)
+        for i in idx_list:
+            a = max(0, i - half); b = min(n, i + half)
+            seg = env[a:b]
+            if seg.size < 3: continue
+            th = 0.25 * float(np.max(seg))
+            # find contiguous region around i above th
+            left = i
+            while left > a and env[left] >= th:
+                left -= 1
+            right = i
+            while right < b and env[right] >= th:
+                right += 1
+            ws.append((right - left) / sr * 1000.0)
+        return float(np.median(ws)) if ws else None
+    s1_dur_ms = _event_width_ms(s1_idx)
+    s2_dur_ms = _event_width_ms(s2_idx)
 
     # Rhythm screening: AF/ectopy suspicion using RR series
     af_suspected=False; ectopy_suspected=False
@@ -1181,6 +1223,8 @@ async def pcg_advanced(
         'systoleMs': float(np.mean(systoles)*1000.0) if len(systoles) else None,
         'diastoleMs': float(np.mean(diastoles)*1000.0) if len(diastoles) else None,
         'dsRatio': float(ds_ratio) if ds_ratio else None,
+        's1DurMs': float(s1_dur_ms) if s1_dur_ms else None,
+        's2DurMs': float(s2_dur_ms) if s2_dur_ms else None,
         's2SplitMs': float(np.median(s2_splits)) if len(s2_splits) else None,
         'a2OsMs': float(np.median(a2_os)) if len(a2_os) else None,
         's1Intensity': s1_int,
@@ -1191,7 +1235,8 @@ async def pcg_advanced(
         'qc': {
             'snrDb': float(snr_db),
             'motionPct': motion_pct,
-            'usablePct': usable_pct
+            'usablePct': usable_pct,
+            'contactNoiseSuspected': bool((snr_db < 3.0) or (motion_pct > 0.5))
         },
         # limited events for UI (indices truncated)
         'events': {
@@ -1201,6 +1246,7 @@ async def pcg_advanced(
         'extras': {
             'respiration': {
                 'respRate': resp_rate,
+                'respDominance': resp_dom,
                 's2SplitType': split_type,
                 's2SplitCorr': float(split_corr) if split_corr is not None else None
             },

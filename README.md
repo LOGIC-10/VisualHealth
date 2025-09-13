@@ -46,7 +46,22 @@ VisualHealth — 心音可视化与社区（微服务架构）
   - 同时可调用 media-service /upload 进行加密存储（页面示例已包含上传位点，请按需接入）
 - 波形与频谱：
   - 波形在前端用 wavesurfer.js 可视化。
-  - 频谱图可通过 wavesurfer 插件或后续引入服务端生成（此版本优先前端渲染）。
+ - 频谱图可通过 wavesurfer 插件或后续引入服务端生成（此版本优先前端渲染）。
+
+算法评估（可选）
+- 已提供两个脚本用于公共数据集上的离线评估，运行结果会以时间戳 JSON 存于 `evals/` 便于迭代：
+  - PhysioNet 2016（正常/异常）：
+    - 脚本：`scripts/eval_physionet2016_iter.py`
+    - 示例（各类各取 100 条，共 200 条）：
+      - `python scripts/eval_physionet2016_iter.py --per-class 100 --out-dir evals/physionet2016`
+    - 输出：基于无训练“杂音得分”的 AUROC/准确率，以及样例行。
+  - PhysioNet 2022 / CirCor DigiScope（儿童，多部位，含分割）：
+    - 脚本：`scripts/eval_circor2022_iter.py`
+    - 会按需下载 `training_data.csv` 与对应 WAV/TSV 标注；示例（100 个受试者、每人 2 个位置）：
+      - `python scripts/eval_circor2022_iter.py --subjects 100 --per-subject-locs 2 --out evals/physionet2022`
+    - 输出：病人层面的杂音 AUROC 与分割 macro‑F1 指标；同时给出样例行。
+  - 依赖：`numpy`, `scipy`, `scikit-learn`, `fastapi`, `httpx`（脚本首次会提示安装）。
+  - 备注：评测为离线工具，产品功能不依赖，可按需运行。
 
 数据与安全
 - 每个微服务使用独立 Postgres（auth-db、media-db、feed-db）。

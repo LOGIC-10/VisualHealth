@@ -78,6 +78,107 @@ def _sha256_hex_of_floats(y: np.ndarray, sr: int) -> str:
     return h.hexdigest()
 
 
+def _welch_band_power(y: np.ndarray, sr: int, lo: float, hi: float) -> float:
+    n = len(y)
+    if n < 64:
+        return 0.0
+    win = 1024 if n >= 2048 else max(128, 1 << (int(np.log2(n)) - 1))
+    hop = max(32, win // 2)
+    total = 0.0
+    frames = 0
+    w = np.hanning(win).astype(np.float32)
+    for k in range(0, n - win, hop):
+        seg = y[k:k + win] * w
+        sp = np.fft.rfft(seg)
+        freqs = np.fft.rfftfreq(win, 1.0 / sr)
+        mask = (freqs >= lo) & (freqs < hi)
+        total += float(np.sum((np.abs(sp[mask]) ** 2)))
+        frames += 1
+    return total / (frames + 1e-9)
+
+
+def _pcg_quality_core(y: np.ndarray, sr: int):
+    # Downsample to ~2kHz for consistency
+    y, sr = _decimate_to_2k(y, sr)
+    n = len(y)
+    issues = []
+    if sr <= 0 or n == 0:
+        return { 'isHeart': False, 'qualityOk': False, 'score': 0.0, 'issues': ['empty'], 'metrics': {} }
+    dur = n / sr
+    if dur < 4.0:
+        issues.append('too_short')
+
+    # Spectral characteristics
+    p_lo = _welch_band_power(y, sr, 20, 150)
+    p_mid = _welch_band_power(y, sr, 150, 400)
+    p_hf = _welch_band_power(y, sr, 600, 1000)
+    p_vlf = _welch_band_power(y, sr, 0, 20)
+    snr_db = 10.0 * np.log10((p_lo + p_mid + 1e-9) / (p_vlf + 1e-9))
+    low_prop = float((p_lo + p_mid) / (p_lo + p_mid + p_hf + 1e-9))
+    if low_prop < 0.55:
+        issues.append('energy_not_in_heart_band')
+
+    # Envelope periodicity
+    win = max(1, int(0.05 * sr))
+    env = np.convolve(np.abs(y), np.ones(win, dtype=np.float32) / float(win), mode='same')
+    env /= (np.max(env) + 1e-9)
+    ac_full = np.correlate(env, env, mode='full')
+    ac = ac_full[n - 1: n - 1 + int(2.0 * sr)]
+    # normalized by ac at 0 lag
+    ac0 = ac[0] + 1e-9
+    min_lag = int(0.3 * sr)  # 200 bpm
+    max_lag = int(1.8 * sr)  # 33 bpm
+    pr = 0.0
+    hr_bpm = None
+    if max_lag > min_lag + 5:
+        seg = ac[min_lag:max_lag]
+        pk = int(np.argmax(seg))
+        peak_val = float(seg[pk])
+        pr = float(max(0.0, min(1.0, peak_val / ac0)))
+        lag = min_lag + pk
+        hr_bpm = float(60.0 * sr / lag)
+    if pr < 0.15:
+        issues.append('weak_periodicity')
+
+    # Cycle consistency estimate via simple peak picking
+    thr = max(0.15, float(np.median(env) + 0.5 * np.std(env)))
+    min_dist = int(0.2 * sr)
+    # simple peak finder
+    peaks = []
+    i = min_dist
+    while i < n - min_dist:
+        seg = env[i - min_dist:i + min_dist + 1]
+        if env[i] == seg.max() and env[i] >= thr:
+            peaks.append(i)
+            i += min_dist
+        i += 1
+    rr = np.diff(np.array(peaks)) / float(sr) if len(peaks) >= 2 else np.array([])
+    cycle_cv = float(np.std(rr) / (np.mean(rr) + 1e-9)) if rr.size else 1.0
+    if rr.size == 0 or cycle_cv > 0.6:
+        issues.append('unstable_cycles')
+
+    # Decide
+    is_heart = (pr >= 0.15) and (low_prop >= 0.55) and (dur >= 4.0)
+    quality_ok = is_heart and (snr_db >= 3.0) and (cycle_cv <= 0.6)
+    # Score (0..1)
+    score = 0.4 * pr + 0.25 * max(0.0, min(1.0, (snr_db + 5.0) / 15.0)) + 0.2 * max(0.0, min(1.0, (low_prop - 0.4) / 0.6)) + 0.15 * max(0.0, min(1.0, 1.0 - min(1.0, cycle_cv)))
+    return {
+        'isHeart': bool(is_heart),
+        'qualityOk': bool(quality_ok),
+        'score': float(score),
+        'issues': issues,
+        'metrics': {
+            'durationSec': float(dur),
+            'snrDb': float(snr_db),
+            'lowBandProp': float(low_prop),
+            'periodicity': float(pr),
+            'cycleCV': float(cycle_cv),
+            'hrBpmEst': float(hr_bpm) if hr_bpm else None,
+            'sr': int(sr)
+        }
+    }
+
+
 async def _fetch_wav_and_decode(media_id: str, auth_header: Optional[str]):
     if not media_id:
         return None, None, 'missing mediaId'
@@ -305,6 +406,31 @@ async def features_media(
         "peak": peak,
         "crestFactor": crest,
     }
+
+
+@app.post('/pcg_quality_pcm')
+async def pcg_quality_pcm(
+    sampleRate: int = Body(...),
+    pcm: List[float] = Body(...)
+):
+    sr = int(sampleRate)
+    y = np.asarray(pcm, dtype=np.float32)
+    if len(y) == 0 or sr <= 0:
+        return JSONResponse({ 'isHeart': False, 'qualityOk': False, 'score': 0.0, 'issues': ['empty'], 'metrics': {} })
+    res = _pcg_quality_core(y, sr)
+    return JSONResponse(content=res)
+
+
+@app.post('/pcg_quality_media')
+async def pcg_quality_media(
+    mediaId: str = Body(...),
+    authorization: Optional[str] = Header(default=None, convert_underscores=False)
+):
+    sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
+    if err:
+        return JSONResponse({ 'isHeart': False, 'qualityOk': False, 'score': 0.0, 'issues': ['media_error'], 'error': err, 'metrics': {} }, status_code=400)
+    res = _pcg_quality_core(y, sr)
+    return JSONResponse(content=res)
 
 
 @app.post('/spectrogram_media')

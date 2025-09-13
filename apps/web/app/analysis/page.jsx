@@ -128,8 +128,15 @@ export default function AnalysisListPage() {
         }
         const dec = await decodeDownsample(arr); if (!dec) return;
             const { payload } = dec;
+            // Quality gate before computing ADV
+            let passQuality = true;
+            try {
+              const qr = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+              const qj = await qr.json();
+              passQuality = !!(qj.isHeart && qj.qualityOk);
+            } catch {}
             const [advResp, specResp] = await Promise.all([
-              item.has_adv ? Promise.resolve({ ok: false }) : fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
+              (passQuality && !item.has_adv) ? fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }) : Promise.resolve({ ok: false }),
               item.has_spec ? Promise.resolve({ ok: false }) : fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
             ]);
             let adv = null; let specId = null;

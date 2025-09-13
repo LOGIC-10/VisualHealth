@@ -49,6 +49,7 @@ export default function AnalysisDetail({ params }) {
   const [aiSubmitted, setAiSubmitted] = useState(false);
   const [pcmPayload, setPcmPayload] = useState(null);
   const [useHsmm, setUseHsmm] = useState(false);
+  const [quality, setQuality] = useState(null);
   // Gain control
   const [gainOpen, setGainOpen] = useState(false);
   const [gainOn, setGainOn] = useState(false);
@@ -474,12 +475,32 @@ export default function AnalysisDetail({ params }) {
           let resp = null;
           try {
             if (meta?.media_id) {
+              // Quality gate for media
+              try {
+                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id }) });
+                const qj = await qr.json();
+                setQuality(qj);
+                if (!(qj.isHeart && qj.qualityOk)) {
+                  setLoading(s=>({ ...s, adv:false }));
+                  return; // skip adv
+                }
+              } catch {}
               resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
             }
           } catch {}
           if (!resp || !resp.ok) {
             // Fallback to PCM endpoint
             try {
+              // Quality gate for PCM
+              try {
+                const qr2 = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+                const qj2 = await qr2.json();
+                setQuality(qj2);
+                if (!(qj2.isHeart && qj2.qualityOk)) {
+                  setLoading(s=>({ ...s, adv:false }));
+                  return;
+                }
+              } catch {}
               resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, useHsmm }) });
             } catch {}
           }
@@ -905,6 +926,11 @@ export default function AnalysisDetail({ params }) {
       alignItems: 'start'
     }}>
       <div ref={contentRef} style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
+      {quality && (!quality.isHeart || !quality.qualityOk) && (
+        <div style={{ marginBottom:12, padding:12, border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b', borderRadius:12 }}>
+          本音频疑似非心音或质量不足，已跳过心音分析。建议在安静环境靠近胸前重新录制（≥6秒）。
+        </div>
+      )}
       <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         {!editing ? (

@@ -475,16 +475,27 @@ export default function AnalysisDetail({ params }) {
           let resp = null;
           try {
             if (meta?.media_id) {
-              // Quality gate for media
+              // Quality gate for media; fallback to PCM when media decode unsupported
+              let pass = true;
               try {
                 const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id }) });
-                const qj = await qr.json();
-                setQuality(qj);
-                if (!(qj.isHeart && qj.qualityOk)) {
-                  setLoading(s=>({ ...s, adv:false }));
-                  return; // skip adv
+                if (qr.ok) {
+                  const qj = await qr.json();
+                  setQuality(qj);
+                  pass = !!(qj.isHeart && qj.qualityOk);
+                } else {
+                  pass = false;
                 }
-              } catch {}
+              } catch { pass = false; }
+              if (!pass) {
+                try {
+                  const qr2 = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+                  const qj2 = await qr2.json();
+                  setQuality(qj2);
+                  pass = !!(qj2.isHeart && qj2.qualityOk);
+                } catch { pass = false; }
+              }
+              if (!pass) { setLoading(s=>({ ...s, adv:false })); return; }
               resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
             }
           } catch {}

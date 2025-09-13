@@ -50,6 +50,10 @@ export default function AnalysisDetail({ params }) {
   const [pcmPayload, setPcmPayload] = useState(null);
   const [useHsmm, setUseHsmm] = useState(false);
   const [quality, setQuality] = useState(null);
+  const [openResp, setOpenResp] = useState(true);
+  const [openSounds, setOpenSounds] = useState(true);
+  const [openMurmur, setOpenMurmur] = useState(true);
+  const [openRhythm, setOpenRhythm] = useState(true);
   // Gain control
   const [gainOpen, setGainOpen] = useState(false);
   const [gainOn, setGainOn] = useState(false);
@@ -1109,43 +1113,95 @@ export default function AnalysisDetail({ params }) {
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             {/* Respiration & S2 split typing */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
-              <div style={{ fontWeight:600, marginBottom:6 }}>{t('RespAndSplit')}</div>
-              <div><b>{t('RespRate')}:</b> {adv.extras.respiration?.respRate ? adv.extras.respiration.respRate.toFixed(1) : '—'} /min</div>
-              <div><b>{t('RespDominance')}:</b> {adv.extras.respiration?.respDominance?.toFixed?.(2) || '—'}</div>
-              <div><b>{t('S2SplitType')}:</b> {adv.extras.respiration?.s2SplitType || '—'}</div>
-              <div><b>{t('S2SplitCorr')}:</b> {adv.extras.respiration?.s2SplitCorr?.toFixed?.(2) || '—'}</div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  {/* lungs icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3v8c0 1.657-1.343 3-3 3H4a3 3 0 0 1-3-3V9c0-1.105.895-2 2-2h1c.552 0 1 .448 1 1v3" stroke="#0f172a" strokeWidth="1.5"/><path d="M15 3v8c0 1.657 1.343 3 3 3h2a3 3 0 0 0 3-3V9c0-1.105-.895-2-2-2h-1c-.552 0-1 .448-1 1v3" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('RespAndSplit')}</span>
+                </div>
+                <button onClick={()=>setOpenResp(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
+                  {openResp ? t('Collapse') : t('Expand')}
+                </button>
+              </div>
+              {openResp && (
+                <>
+                  <div><b>{t('RespRate')}:</b> {adv.extras.respiration?.respRate ? adv.extras.respiration.respRate.toFixed(1) : '—'} /min</div>
+                  <div><b>{t('RespDominance')}:</b> {adv.extras.respiration?.respDominance?.toFixed?.(2) || '—'}</div>
+                  <div><b>{t('S2SplitType')}:</b> {adv.extras.respiration?.s2SplitType || '—'}</div>
+                  <div><b>{t('S2SplitCorr')}:</b> {adv.extras.respiration?.s2SplitCorr?.toFixed?.(2) || '—'}</div>
+                </>
+              )}
             </div>
             {/* Additional sounds */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
-              <div style={{ fontWeight:600, marginBottom:6 }}>{t('AdditionalSounds')}</div>
-              <div><b>{t('S3Prob')}:</b> {(adv.extras.additionalSounds?.s3Prob!=null)? Math.round(adv.extras.additionalSounds.s3Prob*100): '—'}%</div>
-              <div><b>{t('S4Prob')}:</b> {(adv.extras.additionalSounds?.s4Prob!=null)? Math.round(adv.extras.additionalSounds.s4Prob*100): '—'}%</div>
-              <div><b>{t('EjectionClickProb')}:</b> {(adv.extras.additionalSounds?.ejectionClickProb!=null)? Math.round(adv.extras.additionalSounds.ejectionClickProb*100): '—'}%</div>
-              <div><b>{t('OpeningSnapProb')}:</b> {(adv.extras.additionalSounds?.openingSnapProb!=null)? Math.round(adv.extras.additionalSounds.openingSnapProb*100): '—'}%</div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  {/* spark/wave icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12c2 0 2-6 4-6s2 12 4 12 2-12 4-12 2 6 4 6" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('AdditionalSounds')}</span>
+                </div>
+                <button onClick={()=>setOpenSounds(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
+                  {openSounds ? t('Collapse') : t('Expand')}
+                </button>
+              </div>
+              {openSounds && (
+                <>
+                  <div><b>{t('S3Prob')}:</b> {(adv.extras.additionalSounds?.s3Prob!=null)? Math.round(adv.extras.additionalSounds.s3Prob*100): '—'}%</div>
+                  <div><b>{t('S4Prob')}:</b> {(adv.extras.additionalSounds?.s4Prob!=null)? Math.round(adv.extras.additionalSounds.s4Prob*100): '—'}%</div>
+                  <div><b>{t('EjectionClickProb')}:</b> {(adv.extras.additionalSounds?.ejectionClickProb!=null)? Math.round(adv.extras.additionalSounds.ejectionClickProb*100): '—'}%</div>
+                  <div><b>{t('OpeningSnapProb')}:</b> {(adv.extras.additionalSounds?.openingSnapProb!=null)? Math.round(adv.extras.additionalSounds.openingSnapProb*100): '—'}%</div>
+                </>
+              )}
             </div>
             {/* Murmur descriptors */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
-              <div style={{ fontWeight:600, marginBottom:6 }}>{t('MurmurScreening')}</div>
-              <div><b>{t('Present')}:</b> {adv.extras.murmur?.present ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
-              <div><b>{t('Phase')}:</b> {adv.extras.murmur?.phase || '—'}</div>
-              <div><b>{t('GradeProxy')}:</b> {adv.extras.murmur?.gradeProxy ?? '—'}</div>
-              <div><b>{t('Confidence')}:</b> {adv.extras.murmur?.confidence!=null ? Math.round(adv.extras.murmur.confidence*100) : '—'}%</div>
-              <div><b>{t('SysCoverage')}:</b> {adv.extras.murmur?.systolic?.coverage!=null ? Math.round(adv.extras.murmur.systolic.coverage*100): '—'}%</div>
-              <div><b>{t('SysShape')}:</b> {adv.extras.murmur?.systolic?.shape || '—'}</div>
-              <div><b>{t('SysPitch')}:</b> {adv.extras.murmur?.systolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
-              <div><b>{t('DiaCoverage')}:</b> {adv.extras.murmur?.diastolic?.coverage!=null ? Math.round(adv.extras.murmur.diastolic.coverage*100): '—'}%</div>
-              <div><b>{t('DiaShape')}:</b> {adv.extras.murmur?.diastolic?.shape || '—'}</div>
-              <div><b>{t('DiaPitch')}:</b> {adv.extras.murmur?.diastolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  {/* stethoscope icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('MurmurScreening')}</span>
+                </div>
+                <button onClick={()=>setOpenMurmur(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
+                  {openMurmur ? t('Collapse') : t('Expand')}
+                </button>
+              </div>
+              {openMurmur && (
+                <>
+                  <div><b>{t('Present')}:</b> {adv.extras.murmur?.present ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
+                  <div><b>{t('Phase')}:</b> {adv.extras.murmur?.phase || '—'}</div>
+                  <div><b>{t('GradeProxy')}:</b> {adv.extras.murmur?.gradeProxy ?? '—'}</div>
+                  <div><b>{t('Confidence')}:</b> {adv.extras.murmur?.confidence!=null ? Math.round(adv.extras.murmur.confidence*100) : '—'}%</div>
+                  <div><b>{t('SysCoverage')}:</b> {adv.extras.murmur?.systolic?.coverage!=null ? Math.round(adv.extras.murmur.systolic.coverage*100): '—'}%</div>
+                  <div><b>{t('SysShape')}:</b> {adv.extras.murmur?.systolic?.shape || '—'}</div>
+                  <div><b>{t('SysPitch')}:</b> {adv.extras.murmur?.systolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+                  <div><b>{t('DiaCoverage')}:</b> {adv.extras.murmur?.diastolic?.coverage!=null ? Math.round(adv.extras.murmur.diastolic.coverage*100): '—'}%</div>
+                  <div><b>{t('DiaShape')}:</b> {adv.extras.murmur?.diastolic?.shape || '—'}</div>
+                  <div><b>{t('DiaPitch')}:</b> {adv.extras.murmur?.diastolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+                </>
+              )}
             </div>
             {/* Rhythm */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
-              <div style={{ fontWeight:600, marginBottom:6 }}>{t('RhythmLabel')}</div>
-              <div><b>{t('RRCV')}:</b> {adv.extras.rhythm?.rrCV?.toFixed?.(3) || '—'}</div>
-              <div><b>pNN50:</b> {adv.extras.rhythm?.pNN50?.toFixed?.(2) || '—'}</div>
-              <div><b>{t('SampleEntropy')}:</b> {adv.extras.rhythm?.sampleEntropy?.toFixed?.(2) || '—'}</div>
-              <div><b>{t('PoincareSD12')}:</b> {adv.extras.rhythm?.poincareSD1?.toFixed?.(3) || '—'} / {adv.extras.rhythm?.poincareSD2?.toFixed?.(3) || '—'}</div>
-              <div><b>AF:</b> {adv.extras.rhythm?.afSuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
-              <div><b>{lang==='zh'?'早搏':'' || 'Ectopy'}:</b> {adv.extras.rhythm?.ectopySuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  {/* heartbeat icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2-5 3 10 2-5h5" stroke="#0f172a" strokeWidth="1.5"/><path d="M4 7a5 5 0 0 1 8-1 5 5 0 0 1 8 1c0 7-8 10-8 10S4 14 4 7z" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('RhythmLabel')}</span>
+                </div>
+                <button onClick={()=>setOpenRhythm(v=>!v)} className="vh-btn vh-btn-outline" style={{ padding:'2px 6px' }}>
+                  {openRhythm ? t('Collapse') : t('Expand')}
+                </button>
+              </div>
+              {openRhythm && (
+                <>
+                  <div><b>{t('RRCV')}:</b> {adv.extras.rhythm?.rrCV?.toFixed?.(3) || '—'}</div>
+                  <div><b>pNN50:</b> {adv.extras.rhythm?.pNN50?.toFixed?.(2) || '—'}</div>
+                  <div><b>{t('SampleEntropy')}:</b> {adv.extras.rhythm?.sampleEntropy?.toFixed?.(2) || '—'}</div>
+                  <div><b>{t('PoincareSD12')}:</b> {adv.extras.rhythm?.poincareSD1?.toFixed?.(3) || '—'} / {adv.extras.rhythm?.poincareSD2?.toFixed?.(3) || '—'}</div>
+                  <div><b>AF:</b> {adv.extras.rhythm?.afSuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
+                  <div><b>{lang==='zh'?'早搏':'Ectopy'}:</b> {adv.extras.rhythm?.ectopySuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
+                </>
+              )}
             </div>
           </div>
         </>

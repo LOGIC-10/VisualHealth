@@ -1,0 +1,2869 @@
+{
+  "timestamp": "2025-09-13T03:30:30.230777Z",
+  "perClass": 30,
+  "counts": {
+    "total": 60,
+    "normal": 30,
+    "abnormal": 30
+  },
+  "metrics": {
+    "auc": 0.5283333333333334,
+    "acc_at_best_t": 0.5333333333333333,
+    "best_t": 0.05,
+    "precision": 0.5833333333333334,
+    "recall": 0.23333333333333334,
+    "f1": 0.33333333333333337
+  },
+  "rows": [
+    {
+      "id": "a0007",
+      "label": 0,
+      "hrBpm": 89.68609865470852,
+      "qc": {
+        "snrDb": 4.049452123497146,
+        "motionPct": 0.14635854587991604,
+        "usablePct": 0.41856389839062413
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 10.546875,
+          "s2SplitType": "indeterminate",
+          "s2SplitCorr": -0.19350195824589894
+        },
+        "additionalSounds": {
+          "s3Prob": 0.08490566037735849,
+          "s4Prob": 0.0,
+          "s3Cycles": 9,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8962264150943396,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.25925925925925924
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.15555535739602705,
+          "pNN50": 0.5480769230769231,
+          "sampleEntropy": 1.826218218821853,
+          "poincareSD1": 0.0593870533351139,
+          "poincareSD2": 0.0425268481880242,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0009",
+      "label": 0,
+      "hrBpm": 78.53403141361257,
+      "qc": {
+        "snrDb": 5.7939637243737785,
+        "motionPct": 0.24573708601458144,
+        "usablePct": 0.4489394087500524
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.11627170522734818,
+      "extras": {
+        "respiration": {
+          "respRate": 5.859375,
+          "s2SplitType": "indeterminate",
+          "s2SplitCorr": 0.005006477610870301
+        },
+        "additionalSounds": {
+          "s3Prob": 0.019230769230769232,
+          "s4Prob": 0.0,
+          "s3Cycles": 2,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.5188679245283019
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "decrescendo",
+            "pitchHz": 170.85450505992043,
+            "bandRatio": 0.0526218361682833,
+            "coverage": 0.30921963983376943
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.15086359401257907,
+          "pNN50": 0.6274509803921569,
+          "sampleEntropy": 2.231291131163426,
+          "poincareSD1": 0.06031238932853451,
+          "poincareSD2": 0.041032968511549785,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0011",
+      "label": 0,
+      "hrBpm": 60.36217303822938,
+      "qc": {
+        "snrDb": 8.96979467904514,
+        "motionPct": 0.14154999022859643,
+        "usablePct": 0.36006348938800165
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 10.546875,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2705008904002296
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.675
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.0917102578539992,
+          "pNN50": 0.6111111111111112,
+          "sampleEntropy": 2.426066149253752,
+          "poincareSD1": 0.08398616278961349,
+          "poincareSD2": 0.0837715910289929,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0012",
+      "label": 0,
+      "hrBpm": 52.083333333333336,
+      "qc": {
+        "snrDb": 5.666154362710127,
+        "motionPct": 0.14473313282437303,
+        "usablePct": 0.3637777669761338
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 44.53125,
+          "s2SplitType": "indeterminate",
+          "s2SplitCorr": 0.17960530202677502
+        },
+        "additionalSounds": {
+          "s3Prob": 0.1111111111111111,
+          "s4Prob": 0.0,
+          "s3Cycles": 10,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9888888888888889,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.4891304347826087
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.15177480864341455,
+          "pNN50": 0.6818181818181818,
+          "sampleEntropy": 1.6124983583921302,
+          "poincareSD1": 0.06226096179083515,
+          "poincareSD2": 0.03709328764038312,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0016",
+      "label": 0,
+      "hrBpm": 60.18054162487462,
+      "qc": {
+        "snrDb": 2.3180948094119773,
+        "motionPct": 0.17030460854528878,
+        "usablePct": 0.43290029230269567
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 38.671875,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.28474739872574956
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9117647058823529,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.16666666666666666
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.1185480144337294,
+          "pNN50": 0.59375,
+          "sampleEntropy": 0.97476250028449,
+          "poincareSD1": 0.12034744977352942,
+          "poincareSD2": 0.08818426562075626,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0019",
+      "label": 0,
+      "hrBpm": 68.3371298405467,
+      "qc": {
+        "snrDb": 7.950802757679297,
+        "motionPct": 0.13916794549726194,
+        "usablePct": 0.3778091025454074
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 22.265625,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.27050089040022957
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8947368421052632,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.375
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12117780584844931,
+          "pNN50": 0.3888888888888889,
+          "sampleEntropy": 0.3576744442691062,
+          "poincareSD1": 0.08272450513602363,
+          "poincareSD2": 0.10907650864392111,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0025",
+      "label": 0,
+      "hrBpm": 62.33766233766234,
+      "qc": {
+        "snrDb": 5.864464004435357,
+        "motionPct": 0.15793427193012194,
+        "usablePct": 0.4042006551480506
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.10080826525295672,
+      "extras": {
+        "respiration": {
+          "respRate": 8.203125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2773500981126146
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9444444444444444,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.23684210526315788
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "plateau",
+            "pitchHz": 173.0058751273059,
+            "bandRatio": 0.0025572982593548483,
+            "coverage": 0.3160621761658031
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.1142765183252518,
+          "pNN50": 0.5588235294117647,
+          "sampleEntropy": 23.307834981351135,
+          "poincareSD1": 0.07999190865223177,
+          "poincareSD2": 0.1110344415180904,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0027",
+      "label": 0,
+      "hrBpm": 70.05253940455341,
+      "qc": {
+        "snrDb": 13.15012602154775,
+        "motionPct": 0.21797303359358863,
+        "usablePct": 0.3461526109576723
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 17.578125,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.27050089040022995
+        },
+        "additionalSounds": {
+          "s3Prob": 0.02631578947368421,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8421052631578947,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.225
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.09990126355956094,
+          "pNN50": 0.4722222222222222,
+          "sampleEntropy": 2.138384076818499,
+          "poincareSD1": 0.07176499767975546,
+          "poincareSD2": 0.0879403801162656,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0028",
+      "label": 0,
+      "hrBpm": 55.37609598523304,
+      "qc": {
+        "snrDb": 7.026280085397959,
+        "motionPct": 0.27591675617906897,
+        "usablePct": 0.40538569970349486
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.11000796841187854,
+      "extras": {
+        "respiration": {
+          "respRate": 8.203125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.25665607628107917
+        },
+        "additionalSounds": {
+          "s3Prob": 0.04597701149425287,
+          "s4Prob": 0.0,
+          "s3Cycles": 4,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9195402298850575,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3595505617977528
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "crescendo",
+            "pitchHz": 169.7580795442061,
+            "bandRatio": 0.03194851454561227,
+            "coverage": 0.3132530120481928
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.1336821474363352,
+          "pNN50": 0.47058823529411764,
+          "sampleEntropy": 1.569836174111781,
+          "poincareSD1": 0.05483124630112155,
+          "poincareSD2": 0.03751436201877627,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0029",
+      "label": 0,
+      "hrBpm": 75.47169811320755,
+      "qc": {
+        "snrDb": 7.172032648533403,
+        "motionPct": 0.1497826481476342,
+        "usablePct": 0.43287760416666665
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 28.125,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2526455763199553
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9545454545454546,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2826086956521739
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.13108707658979848,
+          "pNN50": 0.6666666666666666,
+          "sampleEntropy": 23.56077410534286,
+          "poincareSD1": 0.09353801657196763,
+          "poincareSD2": 0.08699675293338638,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0032",
+      "label": 0,
+      "hrBpm": 54.151624548736464,
+      "qc": {
+        "snrDb": 7.631576089641073,
+        "motionPct": 0.15041050851022075,
+        "usablePct": 0.41386754892614813
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 15.234375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2886751345948129
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9393939393939394,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3142857142857143
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.08246769785315497,
+          "pNN50": 0.5806451612903226,
+          "sampleEntropy": 1.8769172773965974,
+          "poincareSD1": 0.08476915461039518,
+          "poincareSD2": 0.09005464376776423,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0035",
+      "label": 0,
+      "hrBpm": 66.62965019433648,
+      "qc": {
+        "snrDb": 3.12345736137288,
+        "motionPct": 0.18807053861270856,
+        "usablePct": 0.4387302682653325
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.10445129534382191,
+      "extras": {
+        "respiration": {
+          "respRate": 18.75,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.28867513459481275
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.22857142857142856
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "plateau",
+            "pitchHz": 174.07350184425826,
+            "bandRatio": 0.014723515368026317,
+            "coverage": 0.3023255813953488
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.09893717309314211,
+          "pNN50": 0.5483870967741935,
+          "sampleEntropy": 0.9808292529756404,
+          "poincareSD1": 0.06692939731363094,
+          "poincareSD2": 0.09975375058464157,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0038",
+      "label": 0,
+      "hrBpm": 80.37508372404555,
+      "qc": {
+        "snrDb": 3.404497581369924,
+        "motionPct": 0.2565544951958584,
+        "usablePct": 0.44299740109731445
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 32.8125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2379154757154433
+        },
+        "additionalSounds": {
+          "s3Prob": 0.02,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.98,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.23076923076923078
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12167578088170349,
+          "pNN50": 0.6875,
+          "sampleEntropy": 2.789728231145107,
+          "poincareSD1": 0.07222753519453491,
+          "poincareSD2": 0.0928009670096329,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0049",
+      "label": 0,
+      "hrBpm": 65.53795740032768,
+      "qc": {
+        "snrDb": 2.9471851528618886,
+        "motionPct": 0.16089133389495536,
+        "usablePct": 0.4235648665726924
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 16.40625,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2847473987257496
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9411764705882353,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3611111111111111
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.06369239861621814,
+          "pNN50": 0.4375,
+          "sampleEntropy": 22.87527807157518,
+          "poincareSD1": 0.05071835407847623,
+          "poincareSD2": 0.06279341616927363,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0050",
+      "label": 0,
+      "hrBpm": 70.38123167155425,
+      "qc": {
+        "snrDb": 7.424654118915569,
+        "motionPct": 0.17488785747935132,
+        "usablePct": 0.41736676400058725
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 16.40625,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.27386127875258337
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8378378378378378,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.15384615384615385
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.09270332839092453,
+          "pNN50": 0.22857142857142856,
+          "sampleEntropy": 0.6714379749891968,
+          "poincareSD1": 0.07018065318613566,
+          "poincareSD2": 0.08124804836309481,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0053",
+      "label": 0,
+      "hrBpm": 60.72874493927125,
+      "qc": {
+        "snrDb": 2.6684908812399133,
+        "motionPct": 0.19574881467205898,
+        "usablePct": 0.44005574912891987
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 39.84375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.25819888974716093
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9047619047619048,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.20454545454545456
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.1281517121375887,
+          "pNN50": 0.75,
+          "sampleEntropy": 23.102462032403572,
+          "poincareSD1": 0.109147427534963,
+          "poincareSD2": 0.10705943426544187,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0055",
+      "label": 0,
+      "hrBpm": 112.88805268109125,
+      "qc": {
+        "snrDb": 6.93132364433891,
+        "motionPct": 0.09510265644623894,
+        "usablePct": 0.44878876240677396
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 11.71875,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2843273808720137
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.7647058823529411,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2714285714285714
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.06683661815220777,
+          "pNN50": 0.045454545454545456,
+          "sampleEntropy": 1.3797344301307388,
+          "poincareSD1": 0.02454115890207952,
+          "poincareSD2": 0.042697380928904426,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0068",
+      "label": 0,
+      "hrBpm": 76.92307692307692,
+      "qc": {
+        "snrDb": 6.787299700040171,
+        "motionPct": 0.0989706758578926,
+        "usablePct": 0.4258450861875979
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 14.0625,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.23570226039551595
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9411764705882353,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.41509433962264153
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12811183984627267,
+          "pNN50": 0.5510204081632653,
+          "sampleEntropy": 2.7906537286228117,
+          "poincareSD1": 0.08628604553157895,
+          "poincareSD2": 0.09006803620886981,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0069",
+      "label": 0,
+      "hrBpm": 64.51612903225806,
+      "qc": {
+        "snrDb": 4.937338357184861,
+        "motionPct": 0.14476284821907448,
+        "usablePct": 0.43357850253233976
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 28.125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.28097574347450865
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8571428571428571,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.08108108108108109
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.10654175215703818,
+          "pNN50": 0.45454545454545453,
+          "sampleEntropy": 0.7827593392217193,
+          "poincareSD1": 0.0921586633900084,
+          "poincareSD2": 0.09249981324710035,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0070",
+      "label": 0,
+      "hrBpm": 53.81165919282511,
+      "qc": {
+        "snrDb": 2.804137068774472,
+        "motionPct": 0.26890909948484065,
+        "usablePct": 0.4361968171484248
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 12.890625,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.30618621784789757
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.7586206896551724,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3225806451612903
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.11278579097535889,
+          "pNN50": 0.48148148148148145,
+          "sampleEntropy": 1.2192402763865262,
+          "poincareSD1": 0.0904776439052169,
+          "poincareSD2": 0.13927744264557482,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0071",
+      "label": 0,
+      "hrBpm": 76.62835249042146,
+      "qc": {
+        "snrDb": 9.548708410468809,
+        "motionPct": 0.18461097288206751,
+        "usablePct": 0.3836041782682799
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 17.578125,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.26111648393354714
+        },
+        "additionalSounds": {
+          "s3Prob": 0.024390243902439025,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.975609756097561,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.4186046511627907
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12601126435831328,
+          "pNN50": 0.5641025641025641,
+          "sampleEntropy": 1.1090835884462213,
+          "poincareSD1": 0.07393573737383358,
+          "poincareSD2": 0.10352668974224719,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0080",
+      "label": 0,
+      "hrBpm": 81.74386920980926,
+      "qc": {
+        "snrDb": 10.473923913646,
+        "motionPct": 0.045746732511192115,
+        "usablePct": 0.37254427562179426
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 21.09375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.25537695922762443
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9302325581395349,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.4
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.08101940977683986,
+          "pNN50": 0.21951219512195122,
+          "sampleEntropy": 1.1228265467593654,
+          "poincareSD1": 0.05434785754079218,
+          "poincareSD2": 0.05974827207247417,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0081",
+      "label": 0,
+      "hrBpm": 85.77555396711936,
+      "qc": {
+        "snrDb": 11.877129277077174,
+        "motionPct": 0.07688628438491246,
+        "usablePct": 0.4018112488083889
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 9.375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.21997067253202932
+        },
+        "additionalSounds": {
+          "s3Prob": 0.01694915254237288,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9491525423728814,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3770491803278688
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12984682568257636,
+          "pNN50": 0.7017543859649122,
+          "sampleEntropy": 1.9095425042519625,
+          "poincareSD1": 0.08327670005427584,
+          "poincareSD2": 0.07059384274524129,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0085",
+      "label": 0,
+      "hrBpm": 77.36943907156673,
+      "qc": {
+        "snrDb": 3.232035149916852,
+        "motionPct": 0.11010677899617474,
+        "usablePct": 0.4262544759312367
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 14.0625,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.25537695922762454
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9302325581395349,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.37777777777777777
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.1169055195412497,
+          "pNN50": 0.5609756097560976,
+          "sampleEntropy": 1.2014696740431172,
+          "poincareSD1": 0.07442733581472796,
+          "poincareSD2": 0.08995340488757862,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0086",
+      "label": 0,
+      "hrBpm": 67.07657909446618,
+      "qc": {
+        "snrDb": 5.0842350818833895,
+        "motionPct": 0.12139584244801585,
+        "usablePct": 0.4276643615332588
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 23.4375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2500000000000001
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9555555555555556,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2553191489361702
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.11510810953304894,
+          "pNN50": 0.6046511627906976,
+          "sampleEntropy": 2.784423179117489,
+          "poincareSD1": 0.08204694091671694,
+          "poincareSD2": 0.10049269459000902,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0088",
+      "label": 0,
+      "hrBpm": 74.58048477315103,
+      "qc": {
+        "snrDb": 4.809707034129937,
+        "motionPct": 0.1304549734060899,
+        "usablePct": 0.4399894486942759
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 16.40625,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.24253562503633264
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.42
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.11706835077886399,
+          "pNN50": 0.6956521739130435,
+          "sampleEntropy": 1.4949826666258197,
+          "poincareSD1": 0.08117802504954882,
+          "poincareSD2": 0.09055690657413265,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0091",
+      "label": 0,
+      "hrBpm": 53.097345132743364,
+      "qc": {
+        "snrDb": 5.373351407056306,
+        "motionPct": 0.20383966522191432,
+        "usablePct": 0.4331087584215592
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.13075720076421907,
+      "extras": {
+        "respiration": {
+          "respRate": 8.203125,
+          "s2SplitType": "indeterminate",
+          "s2SplitCorr": 0.12154084690043195
+        },
+        "additionalSounds": {
+          "s3Prob": 0.09195402298850575,
+          "s4Prob": 0.0,
+          "s3Cycles": 8,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.5842696629213483
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "mid",
+            "shape": "crescendo",
+            "pitchHz": 167.49228270151465,
+            "bandRatio": 0.07593183938666578,
+            "coverage": 0.4050632911392405
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.14545191581627148,
+          "pNN50": 0.49411764705882355,
+          "sampleEntropy": 1.6956884177923588,
+          "poincareSD1": 0.05304917187551754,
+          "poincareSD2": 0.048010797200212105,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0093",
+      "label": 0,
+      "hrBpm": 72.50755287009063,
+      "qc": {
+        "snrDb": 6.534251053603652,
+        "motionPct": 0.11209374143267528,
+        "usablePct": 0.42888997395833334
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 7.03125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2611164839335467
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9512195121951219,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3953488372093023
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12657379973392885,
+          "pNN50": 0.6153846153846154,
+          "sampleEntropy": 2.025374319831514,
+          "poincareSD1": 0.09373680665438736,
+          "poincareSD2": 0.09341176727660175,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0094",
+      "label": 0,
+      "hrBpm": 69.44444444444444,
+      "qc": {
+        "snrDb": 9.156844367608622,
+        "motionPct": 0.14056287098320844,
+        "usablePct": 0.4186059552515
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 12.890625,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2611164839335471
+        },
+        "additionalSounds": {
+          "s3Prob": 0.024390243902439025,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8780487804878049,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3953488372093023
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.027778083780903035,
+          "pNN50": 0.02564102564102564,
+          "sampleEntropy": 1.7376922477749137,
+          "poincareSD1": 0.016585700771612578,
+          "poincareSD2": 0.029530971536922558,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0102",
+      "label": 0,
+      "hrBpm": 96.30818619582665,
+      "qc": {
+        "snrDb": 6.251697996271245,
+        "motionPct": 0.11063121172113836,
+        "usablePct": 0.418468107819589
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 21.09375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2198155277160454
+        },
+        "additionalSounds": {
+          "s3Prob": 0.015873015873015872,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9523809523809523,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.38461538461538464
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.10783965257568552,
+          "pNN50": 0.3770491803278688,
+          "sampleEntropy": 2.2686835408070505,
+          "poincareSD1": 0.04928253723395409,
+          "poincareSD2": 0.06955200402316421,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0001",
+      "label": 1,
+      "hrBpm": 60.82108464267613,
+      "qc": {
+        "snrDb": 3.717140464459775,
+        "motionPct": 0.11202574064365343,
+        "usablePct": 0.41779285594123255
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 16.40625,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2672612419124243
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2682926829268293
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.0988231219294506,
+          "pNN50": 0.4864864864864865,
+          "sampleEntropy": 0.5967680535462394,
+          "poincareSD1": 0.09215600558020966,
+          "poincareSD2": 0.08634626105938381,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0002",
+      "label": 1,
+      "hrBpm": 78.43137254901961,
+      "qc": {
+        "snrDb": 5.542012659467371,
+        "motionPct": 0.17479937028062753,
+        "usablePct": 0.4387257843819766
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.1322191228389797,
+      "extras": {
+        "respiration": {
+          "respRate": 18.75,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.31622776601683766
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.27586206896551724
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "plateau",
+            "pitchHz": 180.38034085977176,
+            "bandRatio": 0.09041446498243749,
+            "coverage": 0.35634920634920636
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.08404910958949051,
+          "pNN50": 0.16,
+          "sampleEntropy": 2.477937980240467,
+          "poincareSD1": 0.05365491589780008,
+          "poincareSD2": 0.07155611754825637,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0003",
+      "label": 1,
+      "hrBpm": 49.14004914004914,
+      "qc": {
+        "snrDb": -1.3838067377692498,
+        "motionPct": 0.22840479892792345,
+        "usablePct": 0.4177734375
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 46.875,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.32732683535398854
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.18518518518518517
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.046138286209783566,
+          "pNN50": 0.5217391304347826,
+          "sampleEntropy": 1.8505999690744215,
+          "poincareSD1": 0.06387217341583111,
+          "poincareSD2": 0.04573438156991347,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0004",
+      "label": 1,
+      "hrBpm": 59.7609561752988,
+      "qc": {
+        "snrDb": 5.098127478905575,
+        "motionPct": 0.16445010781510574,
+        "usablePct": 0.39810093688986276
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 19.921875,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2773500981126147
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.18421052631578946
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.07818456860821224,
+          "pNN50": 0.7647058823529411,
+          "sampleEntropy": 1.7292391120428432,
+          "poincareSD1": 0.06779608265622293,
+          "poincareSD2": 0.08349619906380915,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0005",
+      "label": 1,
+      "hrBpm": 89.55223880597015,
+      "qc": {
+        "snrDb": 11.07487421394643,
+        "motionPct": 0.13724247145940702,
+        "usablePct": 0.3993859698312118
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 5.859375,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.22549380840084904
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.13793103448275862
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.10098360607492955,
+          "pNN50": 0.35185185185185186,
+          "sampleEntropy": 1.0075022742901634,
+          "poincareSD1": 0.055052696416397706,
+          "poincareSD2": 0.07079791953632807,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0006",
+      "label": 1,
+      "hrBpm": 79.52286282306163,
+      "qc": {
+        "snrDb": 2.984319401406725,
+        "motionPct": 0.1989819769553437,
+        "usablePct": 0.46167927164121586
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.10111994408576494,
+      "extras": {
+        "respiration": {
+          "respRate": 14.0625,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2970442628930026
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.967741935483871,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.12121212121212122
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "crescendo",
+            "pitchHz": 165.92583828735346,
+            "bandRatio": 0.003417189752635705,
+            "coverage": 0.327738336713996
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.11881838082364465,
+          "pNN50": 0.6551724137931034,
+          "sampleEntropy": 0.8421827596207366,
+          "poincareSD1": 0.0828720756079917,
+          "poincareSD2": 0.06948818985171329,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0008",
+      "label": 1,
+      "hrBpm": 85.95988538681948,
+      "qc": {
+        "snrDb": -2.335332754994148,
+        "motionPct": 0.26507390119050417,
+        "usablePct": 0.45895183700828085
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.10263302476805594,
+      "extras": {
+        "respiration": {
+          "respRate": 30.46875,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.22549380840084898
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.1896551724137931
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "crescendo",
+            "pitchHz": 175.0999873139994,
+            "bandRatio": 0.008477055350814241,
+            "coverage": 0.3106060606060606
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.11197712628463422,
+          "pNN50": 0.5185185185185185,
+          "sampleEntropy": 1.753293188126204,
+          "poincareSD1": 0.0661858150527553,
+          "poincareSD2": 0.07449526382316837,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0010",
+      "label": 1,
+      "hrBpm": 76.57945118059988,
+      "qc": {
+        "snrDb": 5.613639841258079,
+        "motionPct": 0.15409035678570063,
+        "usablePct": 0.413182784866801
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 9.375,
+          "s2SplitType": "indeterminate",
+          "s2SplitCorr": 0.14203434722830058
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0196078431372549,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.5283018867924528
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.11815158949921631,
+          "pNN50": 0.5102040816326531,
+          "sampleEntropy": 1.1812158171284348,
+          "poincareSD1": 0.07461737118436725,
+          "poincareSD2": 0.08850349099066294,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0013",
+      "label": 1,
+      "hrBpm": 66.1521499448732,
+      "qc": {
+        "snrDb": 3.6970407833163152,
+        "motionPct": 0.15775499656405373,
+        "usablePct": 0.44569057365558234
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 18.75,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.26111648393354725
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.5813953488372093
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.08810920915776038,
+          "pNN50": 0.28205128205128205,
+          "sampleEntropy": 1.6951326334031274,
+          "poincareSD1": 0.05938330481039105,
+          "poincareSD2": 0.08984123140182455,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0014",
+      "label": 1,
+      "hrBpm": 54.6448087431694,
+      "qc": {
+        "snrDb": 3.315108407322376,
+        "motionPct": 0.5242871701116771,
+        "usablePct": 0.4433344526527871
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 9.375,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2773500981126147
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2631578947368421
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.10949831002514751,
+          "pNN50": 0.6764705882352942,
+          "sampleEntropy": 23.153684301536448,
+          "poincareSD1": 0.10779343601822847,
+          "poincareSD2": 0.1053450407013243,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0015",
+      "label": 1,
+      "hrBpm": 66.07929515418502,
+      "qc": {
+        "snrDb": 0.4691424259818939,
+        "motionPct": 0.21997361128194368,
+        "usablePct": 0.45781564808596376
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.10181462217615421,
+      "extras": {
+        "respiration": {
+          "respRate": 5.859375,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.24370866238400318
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9896907216494846,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.24242424242424243
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "plateau",
+            "pitchHz": 174.91076478271728,
+            "bandRatio": 0.005631586063926823,
+            "coverage": 0.32222222222222224
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.1268405683241972,
+          "pNN50": 0.49473684210526314,
+          "sampleEntropy": 1.9421035204756898,
+          "poincareSD1": 0.05022004406096002,
+          "poincareSD2": 0.041662818390430394,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0017",
+      "label": 1,
+      "hrBpm": 64.55083378160302,
+      "qc": {
+        "snrDb": 10.229773279031267,
+        "motionPct": 0.10400892146992088,
+        "usablePct": 0.3646189648404643
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 45.703125,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.26726124191242395
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.43902439024390244
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.07180284969367422,
+          "pNN50": 0.2702702702702703,
+          "sampleEntropy": 2.5455312713303617,
+          "poincareSD1": 0.05192888602500917,
+          "poincareSD2": 0.07520171769765677,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0018",
+      "label": 1,
+      "hrBpm": 66.4819944598338,
+      "qc": {
+        "snrDb": 9.894215826781517,
+        "motionPct": 0.20187667111538038,
+        "usablePct": 0.37503588860178005
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 7.03125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.33968311024337833
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8695652173913043,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.04902430995083168,
+          "pNN50": 0.19047619047619047,
+          "sampleEntropy": 1.2809338454214825,
+          "poincareSD1": 0.03266257957217081,
+          "poincareSD2": 0.05214442660793312,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0020",
+      "label": 1,
+      "hrBpm": 93.16770186335404,
+      "qc": {
+        "snrDb": 5.722067872287226,
+        "motionPct": 0.09762943878156229,
+        "usablePct": 0.4334099702798183
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 16.40625,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.2541819274250224
+        },
+        "additionalSounds": {
+          "s3Prob": 0.017543859649122806,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9824561403508771,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.288135593220339
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.0903999915304601,
+          "pNN50": 0.2545454545454545,
+          "sampleEntropy": 1.0953581367081868,
+          "poincareSD1": 0.04835462749313658,
+          "poincareSD2": 0.0626300913446303,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0021",
+      "label": 1,
+      "hrBpm": 50.63291139240506,
+      "qc": {
+        "snrDb": 7.828398409551756,
+        "motionPct": 0.15104480259352182,
+        "usablePct": 0.38655485792142485
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 37.5,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.28867513459481303
+        },
+        "additionalSounds": {
+          "s3Prob": 0.030303030303030304,
+          "s4Prob": 0.0,
+          "s3Cycles": 1,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9393939393939394,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2857142857142857
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.10510516889118701,
+          "pNN50": 0.4838709677419355,
+          "sampleEntropy": 2.0104486698414235,
+          "poincareSD1": 0.0857305145431272,
+          "poincareSD2": 0.13084963142530975,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0022",
+      "label": 1,
+      "hrBpm": 50.0,
+      "qc": {
+        "snrDb": 3.444127830713535,
+        "motionPct": 0.285966314430425,
+        "usablePct": 0.39874424329594643
+      },
+      "murmurPresent": true,
+      "murmurScore": 0.10141297332881637,
+      "extras": {
+        "respiration": {
+          "respRate": 46.875,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.3015113445777638
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.34375
+        },
+        "murmur": {
+          "present": true,
+          "phase": "/diastolic",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": true,
+            "extent": "early",
+            "shape": "plateau",
+            "pitchHz": 204.7133794946006,
+            "bandRatio": 0.004398039185867356,
+            "coverage": 0.3212734741784038
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.05481688450534799,
+          "pNN50": 0.03571428571428571,
+          "sampleEntropy": 1.8201589436591974,
+          "poincareSD1": 0.034234578682247864,
+          "poincareSD2": 0.08545310189594078,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0023",
+      "label": 1,
+      "hrBpm": 45.18072289156626,
+      "qc": {
+        "snrDb": 6.427397348628686,
+        "motionPct": 0.22580900084830322,
+        "usablePct": 0.4237925509303162
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 45.703125,
+          "s2SplitType": "paradoxical",
+          "s2SplitCorr": -0.33968311024337877
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.8695652173913043,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.36
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.07130885496424548,
+          "pNN50": 0.7142857142857143,
+          "sampleEntropy": 1.68639895343148,
+          "poincareSD1": 0.10155100200918896,
+          "poincareSD2": 0.08081290492551267,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0024",
+      "label": 1,
+      "hrBpm": 71.8132854578097,
+      "qc": {
+        "snrDb": 9.10166691066669,
+        "motionPct": 0.2823423208515328,
+        "usablePct": 0.47725844651747307
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 7.03125,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.33333333333333304
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.3076923076923077
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.03084377596619091,
+          "pNN50": 0.09090909090909091,
+          "sampleEntropy": 1.8458266903388318,
+          "poincareSD1": 0.01933523311650061,
+          "poincareSD2": 0.030752340013163394,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0026",
+      "label": 1,
+      "hrBpm": 68.64988558352402,
+      "qc": {
+        "snrDb": 2.3775827227413897,
+        "motionPct": 0.1654785564540218,
+        "usablePct": 0.4260390768755355
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 19.921875,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2526455763199559
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 1.0,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.2391304347826087
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.12337930538450245,
+          "pNN50": 0.5238095238095238,
+          "sampleEntropy": 1.416326648021905,
+          "poincareSD1": 0.07089904115205775,
+          "poincareSD2": 0.11924432088007549,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    },
+    {
+      "id": "a0030",
+      "label": 1,
+      "hrBpm": 78.02340702210664,
+      "qc": {
+        "snrDb": 3.5587864654006083,
+        "motionPct": 0.17882542675516447,
+        "usablePct": 0.44653332781205574
+      },
+      "murmurPresent": false,
+      "murmurScore": 0.0,
+      "extras": {
+        "respiration": {
+          "respRate": 15.234375,
+          "s2SplitType": "physiologic",
+          "s2SplitCorr": 0.2357022603955165
+        },
+        "additionalSounds": {
+          "s3Prob": 0.0,
+          "s4Prob": 0.0,
+          "s3Cycles": 0,
+          "s4Cycles": 0,
+          "ejectionClickProb": 0.9803921568627451,
+          "midSystolicClickProb": 0.0,
+          "openingSnapProb": 0.16981132075471697
+        },
+        "murmur": {
+          "present": false,
+          "phase": "",
+          "systolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          },
+          "diastolic": {
+            "present": false,
+            "extent": "early",
+            "shape": null,
+            "pitchHz": null,
+            "bandRatio": null,
+            "coverage": 0.0
+          }
+        },
+        "rhythm": {
+          "rrCV": 0.09735986218512797,
+          "pNN50": 0.4897959183673469,
+          "sampleEntropy": 2.522389742048549,
+          "poincareSD1": 0.05893287377173642,
+          "poincareSD2": 0.07654797573420594,
+          "afSuspected": false,
+          "ectopySuspected": false
+        }
+      }
+    }
+  ]
+}

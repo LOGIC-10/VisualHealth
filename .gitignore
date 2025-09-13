@@ -35,3 +35,4 @@ coverage/
 # Local data and artifacts
 tmp/
 heart_*.wav
+evals/.cache/

@@ -105,7 +105,7 @@ def _pcg_quality_core(y: np.ndarray, sr: int):
     if sr <= 0 or n == 0:
         return { 'isHeart': False, 'qualityOk': False, 'score': 0.0, 'issues': ['empty'], 'metrics': {} }
     dur = n / sr
-    if dur < 4.0:
+    if dur < 3.0:
         issues.append('too_short')
 
     # Spectral characteristics
@@ -115,7 +115,7 @@ def _pcg_quality_core(y: np.ndarray, sr: int):
     p_vlf = _welch_band_power(y, sr, 0, 20)
     snr_db = 10.0 * np.log10((p_lo + p_mid + 1e-9) / (p_vlf + 1e-9))
     low_prop = float((p_lo + p_mid) / (p_lo + p_mid + p_hf + 1e-9))
-    if low_prop < 0.55:
+    if low_prop < 0.50:
         issues.append('energy_not_in_heart_band')
 
     # Envelope periodicity
@@ -137,7 +137,7 @@ def _pcg_quality_core(y: np.ndarray, sr: int):
         pr = float(max(0.0, min(1.0, peak_val / ac0)))
         lag = min_lag + pk
         hr_bpm = float(60.0 * sr / lag)
-    if pr < 0.15:
+    if pr < 0.12:
         issues.append('weak_periodicity')
 
     # Cycle consistency estimate via simple peak picking
@@ -154,14 +154,27 @@ def _pcg_quality_core(y: np.ndarray, sr: int):
         i += 1
     rr = np.diff(np.array(peaks)) / float(sr) if len(peaks) >= 2 else np.array([])
     cycle_cv = float(np.std(rr) / (np.mean(rr) + 1e-9)) if rr.size else 1.0
-    if rr.size == 0 or cycle_cv > 0.6:
+    if rr.size == 0 or cycle_cv > 0.8:
         issues.append('unstable_cycles')
 
-    # Decide
-    is_heart = (pr >= 0.15) and (low_prop >= 0.55) and (dur >= 4.0)
-    quality_ok = is_heart and (snr_db >= 3.0) and (cycle_cv <= 0.6)
     # Score (0..1)
     score = 0.4 * pr + 0.25 * max(0.0, min(1.0, (snr_db + 5.0) / 15.0)) + 0.2 * max(0.0, min(1.0, (low_prop - 0.4) / 0.6)) + 0.15 * max(0.0, min(1.0, 1.0 - min(1.0, cycle_cv)))
+    # Heuristic pass
+    is_heart = ((pr >= 0.12) and (low_prop >= 0.50) and (dur >= 3.0)) or (score >= 0.5)
+    # Fallback: try HSMM segmentation to confirm heart-like periodicity
+    if not is_heart:
+        try:
+            from pcg_hsmm import segment_pcg_hsmm
+            m = segment_pcg_hsmm(sr, y.tolist())
+            hb = m.get('hrBpm') or 0
+            s1 = m.get('events',{}).get('s1',[]) or []
+            s2 = m.get('events',{}).get('s2',[]) or []
+            if 40 <= float(hb) <= 200 and min(len(s1), len(s2)) >= 3:
+                is_heart = True
+        except Exception:
+            pass
+    # Quality OK: looser constraints (screening)
+    quality_ok = is_heart and (snr_db >= 0.0) and (cycle_cv <= 0.8)
     return {
         'isHeart': bool(is_heart),
         'qualityOk': bool(quality_ok),

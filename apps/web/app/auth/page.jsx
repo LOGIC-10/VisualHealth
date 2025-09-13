@@ -35,7 +35,25 @@ export default function AuthPage() {
         if (mode === 'signup' && displayName) body.displayName = displayName.trim();
         const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const json = await resp.json(); if (!resp.ok || json?.error) throw new Error(json?.error || 'failed');
-        if (json.token) { localStorage.setItem('vh_token', json.token); window.location.href = '/onboarding'; return; }
+        if (json.token) {
+          localStorage.setItem('vh_token', json.token);
+          if (mode === 'signup') { window.location.href = '/onboarding'; return; }
+          // Existing user login: decide destination based on profile
+          try {
+            const r = await fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${json.token}` } });
+            const u = await r.json();
+            // If email already verified (or any profile exists), go home directly
+            if (u && !u.error && (u.email_verified_at || u.display_name || u.profile_extras)) {
+              window.location.href = '/';
+            } else {
+              window.location.href = '/onboarding';
+            }
+          } catch {
+            // Fallback: go home
+            window.location.href = '/';
+          }
+          return;
+        }
       } else if (mode === 'forgot') {
         const resp = await fetch(AUTH_BASE + '/password/forgot', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email }) });
         const j = await resp.json(); if (!resp.ok || j?.error) throw new Error(j?.error || 'failed');

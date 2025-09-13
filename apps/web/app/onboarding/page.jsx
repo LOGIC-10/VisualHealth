@@ -36,6 +36,45 @@ export default function Onboarding(){
     const tkn = typeof localStorage !== 'undefined' ? localStorage.getItem('vh_token') : null;
     if (!tkn) { window.location.href = '/auth'; return; }
     setToken(tkn);
+    // If a guest pending analysis exists, save it immediately after login
+    (async () => {
+      try {
+        const raw = localStorage.getItem('vh_pending_analysis');
+        if (raw) {
+          const p = JSON.parse(raw);
+          if (p?.base64 && p?.name && p?.type) {
+            const bin = Uint8Array.from(atob(p.base64), c=>c.charCodeAt(0));
+            const blob = new Blob([bin], { type: p.type || 'audio/wav' });
+            const fd = new FormData(); fd.append('file', new File([blob], p.name, { type: p.type||'application/octet-stream' }));
+            const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+            const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
+            // Upload media
+            const up = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${tkn}` }, body: fd });
+            const meta = await up.json(); if (!up.ok || meta?.error || !meta?.id) throw new Error(meta?.error || 'upload failed');
+            // Compute quick features locally to seed record (best-effort)
+            let features = null;
+            try {
+              const arr = await blob.arrayBuffer();
+              const Ctx = window.OfflineAudioContext || window.AudioContext || window.webkitAudioContext;
+              const ctx = new (Ctx)();
+              const buf = await ctx.decodeAudioData(arr.slice(0));
+              const ch = buf.getChannelData(0); const targetSR = 8000; const ratio = Math.max(1, Math.floor(buf.sampleRate/targetSR));
+              const ds = new Float32Array(Math.ceil(ch.length/ratio)); for (let i=0;i<ds.length;i++) ds[i] = ch[i*ratio]||0;
+              const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
+              const r = await fetch(VIZ_BASE + '/features_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate: Math.round(buf.sampleRate/ratio), pcm: Array.from(ds) }) });
+              if (r.ok) features = await r.json();
+            } catch {}
+            // Create analysis record
+            const body = { mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: features || { sampleRate: null, durationSec: null } };
+            const rec = await fetch(ANALYSIS_BASE + '/records', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${tkn}` }, body: JSON.stringify(body) });
+            const saved = await rec.json();
+            // Clear stash and redirect to detail
+            localStorage.removeItem('vh_pending_analysis');
+            if (saved?.id) { window.location.href = `/analysis/${saved.id}`; return; }
+          }
+        }
+      } catch {}
+    })();
     fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${tkn}` } })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(u => {
@@ -46,6 +85,13 @@ export default function Onboarding(){
         try { setHeightCm(u.height_cm != null ? String(u.height_cm) : ''); } catch {}
         try { setWeightKg(u.weight_kg != null ? String(u.weight_kg) : ''); } catch {}
         try { setVisibilityPreset((u.profile_visibility?.preset)||'private'); } catch {}
+        // If user already verified (existing user), skip onboarding
+        try {
+          const pending = localStorage.getItem('vh_pending_analysis');
+          if (u?.email_verified_at && !pending) {
+            window.location.href = '/';
+          }
+        } catch {}
       })
       .catch(() => {});
   }, []);

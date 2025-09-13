@@ -18,11 +18,15 @@ export default function CommunityPage() {
   }
 
   useEffect(() => {
-    const t = localStorage.getItem('vh_token'); setToken(t);
+    // Seed token from localStorage; if none, use empty string so we still fetch public posts
+    const t = localStorage.getItem('vh_token') || '';
+    setToken(t);
   }, []);
 
   useEffect(() => {
-    if (token !== null) load(token || undefined);
+    // Always load once token state is initialized ('' for visitors)
+    if (token === null) return;
+    load(token || undefined);
   }, [token]);
 
   // Update post authors immediately when profile changes (without refetch)

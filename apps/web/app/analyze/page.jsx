@@ -16,11 +16,25 @@ export default function AnalyzePage() {
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState(null);
   const [navigating, setNavigating] = useState(false);
+  const [guestNoticeOpen, setGuestNoticeOpen] = useState(false);
+  const [guestErr, setGuestErr] = useState('');
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
-    if (t) setToken(t);
+    setToken(t || ''); // empty string means visitor
   }, []);
+
+  // Warn guests about leaving the page (analysis will be discarded)
+  useEffect(() => {
+    if (token) return; // logged-in users auto-save
+    function onBeforeUnload(e){
+      if (!fileObj) return; // nothing to lose
+      e.preventDefault();
+      e.returnValue = '';
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [token, fileObj]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -38,6 +52,18 @@ export default function AnalyzePage() {
     const file = e.target.files?.[0];
     if (!file || !ws) return;
     setFileObj(file);
+    // Guest limit: at most 3 cases per session (tab)
+    if (!token) {
+      try {
+        const n = parseInt(sessionStorage.getItem('vh_guest_case_count')||'0', 10) || 0;
+        if (n >= 3) {
+          setGuestErr('游客最多创建 3 个分析。请登录保存更多。');
+          setGuestNoticeOpen(true);
+          return;
+        }
+        sessionStorage.setItem('vh_guest_case_count', String(n+1));
+      } catch {}
+    }
     if (token) setNavigating(true);
     const arrayBuffer = await file.arrayBuffer();
     ws.loadBlob(file);
@@ -108,6 +134,9 @@ export default function AnalyzePage() {
         } finally {
           setSaving(false);
         }
+      } else {
+        // Visitor path: show sticky notice to save by login
+        setGuestNoticeOpen(true);
       }
   }
 
@@ -117,6 +146,31 @@ export default function AnalyzePage() {
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('NewAnalysis')}</h1>
       <input type="file" accept="audio/*" onChange={handleFile} />
+      {/* Guest notice and actions */}
+      {!token && guestNoticeOpen && (
+        <div style={{ marginTop:12, padding:12, border:'1px solid #e5e7eb', borderRadius:12, background:'#fff' }}>
+          <div style={{ fontWeight:600, marginBottom:6 }}>游客模式</div>
+          <div style={{ color:'#475569', fontSize:14 }}>退出此页面后，未登录的分析不会保存。你可以先登录/注册将本次分析保存到你的账户。</div>
+          {guestErr && <div style={{ color:'#b91c1c', marginTop:6 }}>{guestErr}</div>}
+          <div style={{ display:'flex', gap:8, marginTop:10 }}>
+            <button className="vh-btn vh-btn-outline" onClick={() => { setGuestNoticeOpen(false); setGuestErr(''); }}>知道了</button>
+            {fileObj && (
+              <button className="vh-btn vh-btn-primary" onClick={async()=>{
+                try {
+                  // Stash the current audio into localStorage (base64) to save after login
+                  const ab = await fileObj.arrayBuffer();
+                  const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+                  const payload = { name: fileObj.name, type: fileObj.type || 'audio/wav', size: fileObj.size, base64: b64 };
+                  localStorage.setItem('vh_pending_analysis', JSON.stringify(payload));
+                  window.location.href = '/auth';
+                } catch (e) {
+                  setGuestErr('暂存失败，请重试或更换浏览器。');
+                }
+              }}>登录/注册并保存</button>
+            )}
+          </div>
+        </div>
+      )}
       {!navigating && <div ref={containerRef} style={{ marginTop: 16 }} />}
       {navigating && (
         <div style={{ marginTop:16, display:'grid', placeItems:'center', color:'#64748b' }}>

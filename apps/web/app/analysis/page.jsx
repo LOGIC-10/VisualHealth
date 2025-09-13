@@ -295,8 +295,19 @@ export default function AnalysisListPage() {
     return (
       <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
         <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('AnalysisTitle')}</h1>
-        <p>{t('LoginToView')}</p>
-        <Link href="/auth" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>{t('Login')}</Link>
+        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
+          <div style={{ fontWeight:600, marginBottom:8 }}>还没有登录？</div>
+          <div style={{ color:'#475569', marginBottom:12 }}>
+            你可以先以游客身份体验分析功能（不保存记录），或登录后保存并管理历史记录。
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <Link href="/analyze" className="vh-btn vh-btn-outline" style={{ textDecoration:'none', padding:'10px 14px' }}>立即体验（不保存）</Link>
+            <Link href="/auth" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>登录 / 注册并保存</Link>
+          </div>
+          <div style={{ marginTop:12, color:'#64748b', fontSize:13 }}>
+            小提示：支持 WAV/MP3/M4A 等常见音频；上传后会即时生成频谱图与临床级 PCG 指标。
+          </div>
+        </div>
       </div>
     );
   }
@@ -367,9 +378,22 @@ export default function AnalysisListPage() {
           <div>Preparing results {healing.done} / {healing.total} …</div>
         </div>
       )}
-      {loading && <div>{t('Loading')}</div>}
+      {loading && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, color:'#64748b' }}>
+          <div className="vh-spin" />
+          <div>{t('Loading')} · 正在读取你的历史分析记录</div>
+          <style>{`.vh-spin{width:18px;height:18px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
+        </div>
+      )}
       {!loading && files.length === 0 && (
-        <div style={{ color:'#64748b' }}>{t('NoRecords')}</div>
+        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16, color:'#475569' }}>
+          <div style={{ fontWeight:600, marginBottom:6 }}>暂无分析记录</div>
+          <div style={{ marginBottom:10 }}>你可以点击右上角「新建分析」上传音频，或进入即时分析快速体验。</div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <button onClick={pickFiles} className="vh-btn vh-btn-outline" style={{ padding:'8px 12px' }}>新建分析（上传音频）</button>
+            <Link href="/analyze" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'8px 12px' }}>进入即时分析</Link>
+          </div>
+        </div>
       )}
       <div style={{ display:'grid', gridTemplateColumns: gridCols.columns, gap: 12 }}>
         {displayFiles.map(f => (

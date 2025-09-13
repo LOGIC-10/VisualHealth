@@ -31,3 +31,8 @@ pnpm-debug.log*
 dist/
 build/
 coverage/
+
+# Local data and artifacts
+tmp/
+heart_*.wav
+evals/.cache/

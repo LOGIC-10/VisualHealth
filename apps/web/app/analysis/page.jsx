@@ -26,6 +26,14 @@ export default function AnalysisListPage() {
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' or 'asc'
+  const [useHsmm, setUseHsmm] = useState(false);
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('vh_use_hsmm');
+      setUseHsmm(v === '1');
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (token === null) { setLoading(false); return; }
@@ -120,8 +128,15 @@ export default function AnalysisListPage() {
         }
         const dec = await decodeDownsample(arr); if (!dec) return;
             const { payload } = dec;
+            // Quality gate before computing ADV
+            let passQuality = true;
+            try {
+              const qr = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+              const qj = await qr.json();
+              passQuality = !!(qj.isHeart && qj.qualityOk);
+            } catch {}
             const [advResp, specResp] = await Promise.all([
-              item.has_adv ? Promise.resolve({ ok: false }) : fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }),
+              (passQuality && !item.has_adv) ? fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }) : Promise.resolve({ ok: false }),
               item.has_spec ? Promise.resolve({ ok: false }) : fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
             ]);
             let adv = null; let specId = null;
@@ -252,7 +267,7 @@ export default function AnalysisListPage() {
         (async ()=>{
           try {
             const [advResp, specResp] = await Promise.all([
-              fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }),
+              fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
               fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
             ]);
             let specId = null; let adv = null;
@@ -353,6 +368,13 @@ export default function AnalysisListPage() {
                       <input type="radio" name="sortdate" checked={sortOrder==='asc'} onChange={()=>setSortOrder('asc')} /> 最早在前
                     </label>
                   </div>
+                </div>
+                <div style={{ gridColumn:'1 / -1' }}>
+                  <div style={{ fontSize:12, color:'#64748b', marginBottom:4 }}>分析选项</div>
+                  <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <input type="checkbox" checked={useHsmm} onChange={e=>{ setUseHsmm(e.target.checked); try { localStorage.setItem('vh_use_hsmm', e.target.checked ? '1' : '0'); } catch {} }} />
+                    使用 HSMM 分割（实验特性）
+                  </label>
                 </div>
                 <div style={{ gridColumn:'1 / -1', display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
                   <button onClick={()=>{ setFilterName(''); setFilterType(''); setDateStart(''); setDateEnd(''); setSortOrder('desc'); }} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px', borderRadius:6 }}>重置</button>

@@ -48,6 +48,18 @@ export default function AnalysisDetail({ params }) {
   const [aiErr, setAiErr] = useState('');
   const [aiSubmitted, setAiSubmitted] = useState(false);
   const [pcmPayload, setPcmPayload] = useState(null);
+  const [useHsmm, setUseHsmm] = useState(false);
+  const [quality, setQuality] = useState(null);
+  const [openResp, setOpenResp] = useState(true);
+  const [openSounds, setOpenSounds] = useState(true);
+  const [openMurmur, setOpenMurmur] = useState(true);
+  const [openRhythm, setOpenRhythm] = useState(true);
+  const [openWave, setOpenWave] = useState(true);
+  const [openSpec, setOpenSpec] = useState(true);
+  const [openClinical, setOpenClinical] = useState(true);
+  const [openFeatures, setOpenFeatures] = useState(true);
+  const [openExtras, setOpenExtras] = useState(true);
+  const [openAI, setOpenAI] = useState(true);
   // Gain control
   const [gainOpen, setGainOpen] = useState(false);
   const [gainOn, setGainOn] = useState(false);
@@ -70,6 +82,9 @@ export default function AnalysisDetail({ params }) {
         setNavOffset(h + 16);
       }
     } catch {}
+  }, []);
+  useEffect(() => {
+    try { setUseHsmm(localStorage.getItem('vh_use_hsmm') === '1'); } catch {}
   }, []);
   useEffect(() => {
     const el = contentRef.current; if (!el) return;
@@ -122,17 +137,11 @@ export default function AnalysisDetail({ params }) {
     try { if (adv) ctx.push('临床级 PCG 分析 (clinical_pcg):\n```json\n' + JSON.stringify(adv) + '\n```'); } catch {}
     // Include basic features
     try { if (features) ctx.push('特征 (features):\n```json\n' + JSON.stringify(features) + '\n```'); } catch {}
-    // Include previous AI, if any, for continuity
+    // Include previous AI text, if any, for continuity（不再包含旧算法指标）
     if (meta?.ai) {
       const ttxt = (meta.ai.texts && meta.ai.texts[lang]) || meta.ai.text || '';
       if (ttxt) ctx.push(`上次AI报告 (Markdown):\n\n${ttxt}`);
-      try { if (meta.ai.metrics) ctx.push('AI指标 (ai_heart):\n```json\n' + JSON.stringify(meta.ai.metrics) + '\n```'); } catch {}
     }
-    // Policy hint to resolve inconsistencies
-    ctx.push(lang==='zh'
-      ? '若 clinical_pcg 与 ai_heart 的数值冲突（如心率），请优先采纳 clinical_pcg。'
-      : 'If clinical_pcg and ai_heart conflict (e.g., heart rate), prefer clinical_pcg.'
-    );
     return ctx.join('\n\n');
   }
 
@@ -385,7 +394,6 @@ export default function AnalysisDetail({ params }) {
           const txt = (rec.ai.texts && rec.ai.texts[lang]) || rec.ai.text || '';
           if (txt && txt.length > 0) {
             setAiText(txt);
-            try { setAiMetrics(rec.ai.metrics || null); } catch {}
             try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {}
             clearInterval(iv);
           }
@@ -470,13 +478,44 @@ export default function AnalysisDetail({ params }) {
           let resp = null;
           try {
             if (meta?.media_id) {
-              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash }) });
+              // Quality gate for media; fallback to PCM when media decode unsupported
+              let pass = true;
+              try {
+                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id }) });
+                if (qr.ok) {
+                  const qj = await qr.json();
+                  setQuality(qj);
+                  pass = !!(qj.isHeart && qj.qualityOk);
+                } else {
+                  pass = false;
+                }
+              } catch { pass = false; }
+              if (!pass) {
+                try {
+                  const qr2 = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+                  const qj2 = await qr2.json();
+                  setQuality(qj2);
+                  pass = !!(qj2.isHeart && qj2.qualityOk);
+                } catch { pass = false; }
+              }
+              if (!pass) { setLoading(s=>({ ...s, adv:false })); return; }
+              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
             }
           } catch {}
           if (!resp || !resp.ok) {
             // Fallback to PCM endpoint
             try {
-              resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash }) });
+              // Quality gate for PCM
+              try {
+                const qr2 = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+                const qj2 = await qr2.json();
+                setQuality(qj2);
+                if (!(qj2.isHeart && qj2.qualityOk)) {
+                  setLoading(s=>({ ...s, adv:false }));
+                  return;
+                }
+              } catch {}
+              resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, useHsmm }) });
             } catch {}
           }
           const t1 = performance.now();
@@ -526,22 +565,7 @@ export default function AnalysisDetail({ params }) {
     })();
   }, [meta, token]);
 
-  // If AI exists but missing current language text, silently schedule background generation
-  useEffect(() => {
-    if (!token || !meta || !pcmPayload) return;
-    const hasTexts = !!meta?.ai?.texts;
-    const hasLang = hasTexts && (meta.ai.texts[lang] && meta.ai.texts[lang].length > 0);
-    if (meta?.ai && !hasLang) {
-      (async ()=>{
-        try {
-          // Mark as submitted to prevent repeated manual clicks
-          setAiSubmitted(true);
-          try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
-          await fetch(ANALYSIS_BASE + `/records/${id}/ai_start`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ ...pcmPayload, lang }) });
-        } catch {}
-      })();
-    }
-  }, [lang, meta, pcmPayload, token, id]);
+  // 不再自动调用后端 ai_start 进行计算；如需自动生成，可在此直接调用 LLM 服务
   // Init WaveSurfer bound to the HTMLAudioElement (so bottom control bar controls everything)
   useEffect(() => {
     if (!audioUrl || !waveWrapRef.current || !audioRef.current) return;
@@ -901,6 +925,11 @@ export default function AnalysisDetail({ params }) {
       alignItems: 'start'
     }}>
       <div ref={contentRef} style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
+      {quality && (!quality.isHeart || !quality.qualityOk) && (
+        <div style={{ marginBottom:12, padding:12, border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b', borderRadius:12 }}>
+          本音频疑似非心音或质量不足，已跳过心音分析。建议在安静环境靠近胸前重新录制（≥6秒）。
+        </div>
+      )}
       <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         {!editing ? (
@@ -925,7 +954,13 @@ export default function AnalysisDetail({ params }) {
         )}
       </div>
       {/* Sub-title: Waveform */}
-      <div style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px' }}>{t('Waveform')}</div>
+      <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {/* waveform icon */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12h3l2-6 3 12 2-6h8" stroke="#0f172a" strokeWidth="1.5"/></svg>
+          <span>{t('Waveform')}</span>
+        </div>
+      </div>
       {meta && (
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
           <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
@@ -950,12 +985,12 @@ export default function AnalysisDetail({ params }) {
       )}
 
       {/* Waveform (client-rendered, smooth) */}
-      { (loading.adv || loading.spec) && (
+      {(loading.adv || loading.spec) && (
         <div style={{ marginTop:8, height:6, background:'#e5e7eb', borderRadius:6, overflow:'hidden' }}>
           <div style={{ width: `${Math.round(Math.min(1, progress)*100)}%`, height:'100%', background:'#2563eb', transition:'width 200ms linear' }} />
         </div>
       )}
-      {audioError ? (
+      {(audioError ? (
         <div style={{ padding:12, color:'#b91c1c', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12 }}>
           {audioError}
         </div>
@@ -1001,25 +1036,37 @@ export default function AnalysisDetail({ params }) {
           {/* Red time label near playhead */}
           <div ref={playLabelRef} style={{ position:'absolute', top: 6, transform:'translateX(-50%)', padding:'2px 6px', fontSize:12, color:'#ef4444', background:'rgba(255,255,255,0.9)', border:'1px solid #fecaca', borderRadius:6, pointerEvents:'none' }} />
         </div>
-      )}
+      ))}
 
       {/* Timeline under waveform */}
-      <div ref={timelineRef} style={{ width:'100%', height: 26, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, borderTopLeftRadius:0, borderTopRightRadius:0, borderTop:'none' }} />
+      {(
+        <div ref={timelineRef} style={{ width:'100%', height: 26, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, borderTopLeftRadius:0, borderTopRightRadius:0, borderTop:'none' }} />
+      )}
 
       {audioUrl && (
         <audio ref={audioRef} controls src={audioUrl} style={{ marginTop: 8, width:'100%' }} />
       )}
 
       {/* Sub-title: Spectrogram */}
-      <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Spectrogram')}</div>
-      {/* Static spectrogram below playback bar (colored, with axes) */}
-      <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', minHeight: 200, position:'relative' }}>
-        {!specUrl && (
-          <div style={{ position:'absolute', inset:0, display:'grid', placeItems:'center', color:'#64748b' }}>
-            <div className="vh-spin" />
+      <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div title={openSpec? t('Collapse') : t('Expand')} className={"vh-arrow "+(openSpec?"vh-rot":"")} onClick={()=>setOpenSpec(v=>!v)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
           </div>
-        )}
-        {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 18V8M8 18V4M12 18V10M16 18V6M20 18V12" stroke="#0f172a" strokeWidth="1.5"/></svg>
+          <span>{t('Spectrogram')}</span>
+        </div>
+      </div>
+      {/* Static spectrogram below playback bar (colored, with axes) */}
+      <div className={"vh-collapse "+(openSpec?"open":"closed")}>
+        <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', minHeight: 200, position:'relative' }}>
+          {!specUrl && (
+            <div style={{ position:'absolute', inset:0, display:'grid', placeItems:'center', color:'#64748b' }}>
+              <div className="vh-spin" />
+            </div>
+          )}
+          {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
+        </div>
       </div>
       <style>{`.vh-spin{width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
       <style>{`
@@ -1030,11 +1077,28 @@ export default function AnalysisDetail({ params }) {
         .vh-range::-moz-range-track{ height:6px; background:#e5e7eb; border-radius:9999px; }
         .vh-range::-moz-range-thumb{ width:14px; height:14px; border:none; border-radius:9999px; background:#94a3b8; }
       `}</style>
+      <style>{`
+        .vh-arrow{ opacity:0; transition: opacity 120ms ease, transform 120ms ease; cursor:pointer; pointer-events:none; display:inline-flex; }
+        .vh-sec-head:hover .vh-arrow{ opacity:1; pointer-events:auto; }
+        .vh-rot{ transform: rotate(90deg); }
+        .vh-collapse{ overflow:hidden; transition:max-height 200ms ease, opacity 200ms ease; opacity:1; }
+        .vh-collapse.closed{ max-height:0; opacity:0; pointer-events:none; }
+        .vh-collapse.open{ max-height:4000px; opacity:1; }
+      `}</style>
 
       {/* Clinical PCG Analysis */}
       {adv && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('ClinicalAnalysis')}</div>
+          <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div title={openClinical? t('Collapse'):t('Expand')} className={"vh-arrow "+(openClinical?"vh-rot":"")} onClick={()=>setOpenClinical(v=>!v)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+            </div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+              <span>{t('ClinicalAnalysis')}</span>
+            </div>
+          </div>
+          <div className={"vh-collapse "+(openClinical?"open":"closed")}>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             <div><b>{t('HeartRate')}:</b> {adv.hrBpm ? adv.hrBpm.toFixed(0) : '—'}</div>
@@ -1045,106 +1109,242 @@ export default function AnalysisDetail({ params }) {
             <div><b>{t('DSRatio')}:</b> {adv.dsRatio?.toFixed?.(2) || '—'}</div>
             <div><b>{t('S2Split')}:</b> {adv.s2SplitMs?.toFixed?.(1) || '—'}</div>
             <div><b>{t('A2OS')}:</b> {adv.a2OsMs?.toFixed?.(1) || '—'}</div>
+            <div><b>{t('S1Width')}:</b> {adv.s1DurMs?.toFixed?.(1) || '—'}</div>
+            <div><b>{t('S2Width')}:</b> {adv.s2DurMs?.toFixed?.(1) || '—'}</div>
             <div><b>{t('S1Intensity')}:</b> {adv.s1Intensity?.toFixed?.(3) || '—'}</div>
             <div><b>{t('S2Intensity')}:</b> {adv.s2Intensity?.toFixed?.(3) || '—'}</div>
             <div><b>{t('SysHF')}:</b> {adv.sysHighFreqEnergy ? adv.sysHighFreqEnergy.toFixed(2) : '—'}</div>
             <div><b>{t('DiaHF')}:</b> {adv.diaHighFreqEnergy ? adv.diaHighFreqEnergy.toFixed(2) : '—'}</div>
             <div><b>{t('SysShape')}:</b> {adv.sysShape || '—'}</div>
             <div><b>{t('SNR')}:</b> {adv.qc?.snrDb?.toFixed?.(1) || '—'}</div>
-            <div><b>{t('MotionPct')}:</b> {adv.qc ? Math.round(adv.qc.motionPct*100) : '—'}</div>
-            <div><b>{t('UsablePct')}:</b> {adv.qc ? Math.round(adv.qc.usablePct*100) : '—'}</div>
+            <div><b>{t('MotionPct')}:</b> {adv.qc ? Math.round(adv.qc.motionPct*100) : '—'}%</div>
+            <div><b>{t('UsablePct')}:</b> {adv.qc ? Math.round(adv.qc.usablePct*100) : '—'}%</div>
+            <div><b>{t('ContactNoise')}:</b> {adv.qc?.contactNoiseSuspected ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
           </div>
             <div style={{ gridColumn:'1 / -1', marginTop: 6, fontSize: 12, color:'#64748b' }}>{t('Disclaimer')}</div>
+          </div>
+          </div>
+        </>
+      )}
+
+      {adv?.extras && (
+        <>
+          <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div title={openExtras? t('Collapse') : t('Expand')} className={"vh-arrow "+(openExtras?"vh-rot":"")} onClick={()=>setOpenExtras(v=>!v)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+              </div>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke="#0f172a" strokeWidth="1.2"/></svg>
+              <span>{t('Extras')}</span>
+            </div>
+          </div>
+          <div className={"vh-collapse "+(openExtras?"open":"closed")}>
+          <div style={{ display: 'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+            {/* Respiration & S2 split typing */}
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+              <div title={openResp? t('Collapse') : t('Expand')} className={"vh-arrow "+(openResp?"vh-rot":"")} onClick={()=>setOpenResp(v=>!v)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                  </div>
+                  {/* lungs icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3v8c0 1.657-1.343 3-3 3H4a3 3 0 0 1-3-3V9c0-1.105.895-2 2-2h1c.552 0 1 .448 1 1v3" stroke="#0f172a" strokeWidth="1.5"/><path d="M15 3v8c0 1.657 1.343 3 3 3h2a3 3 0 0 0 3-3V9c0-1.105-.895-2-2-2h-1c-.552 0-1 .448-1 1v3" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('RespAndSplit')}</span>
+                </div>
+              </div>
+              <div className={"vh-collapse "+(openResp?"open":"closed")}>
+                <>
+                  <div><b>{t('RespRate')}:</b> {adv.extras.respiration?.respRate ? adv.extras.respiration.respRate.toFixed(1) : '—'} /min</div>
+                  <div><b>{t('RespDominance')}:</b> {adv.extras.respiration?.respDominance?.toFixed?.(2) || '—'}</div>
+                  <div><b>{t('S2SplitType')}:</b> {adv.extras.respiration?.s2SplitType || '—'}</div>
+                  <div><b>{t('S2SplitCorr')}:</b> {adv.extras.respiration?.s2SplitCorr?.toFixed?.(2) || '—'}</div>
+                </>
+              </div>
+            </div>
+            {/* Additional sounds */}
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  <div title={openSounds? t('Collapse') : t('Expand')} className={"vh-arrow "+(openSounds?"vh-rot":"")} onClick={()=>setOpenSounds(v=>!v)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                  </div>
+                  {/* spark/wave icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12c2 0 2-6 4-6s2 12 4 12 2-12 4-12 2 6 4 6" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('AdditionalSounds')}</span>
+                </div>
+              </div>
+              <div className={"vh-collapse "+(openSounds?"open":"closed")}>
+                <>
+                  <div><b>{t('S3Prob')}:</b> {(adv.extras.additionalSounds?.s3Prob!=null)? Math.round(adv.extras.additionalSounds.s3Prob*100): '—'}%</div>
+                  <div><b>{t('S4Prob')}:</b> {(adv.extras.additionalSounds?.s4Prob!=null)? Math.round(adv.extras.additionalSounds.s4Prob*100): '—'}%</div>
+                  <div><b>{t('EjectionClickProb')}:</b> {(adv.extras.additionalSounds?.ejectionClickProb!=null)? Math.round(adv.extras.additionalSounds.ejectionClickProb*100): '—'}%</div>
+                  <div><b>{t('OpeningSnapProb')}:</b> {(adv.extras.additionalSounds?.openingSnapProb!=null)? Math.round(adv.extras.additionalSounds.openingSnapProb*100): '—'}%</div>
+                </>
+              </div>
+            </div>
+            {/* Murmur descriptors */}
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  <div title={openMurmur? t('Collapse') : t('Expand')} className={"vh-arrow "+(openMurmur?"vh-rot":"")} onClick={()=>setOpenMurmur(v=>!v)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                  </div>
+                  {/* stethoscope icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('MurmurScreening')}</span>
+                </div>
+              </div>
+              <div className={"vh-collapse "+(openMurmur?"open":"closed")}>
+                <>
+                  <div><b>{t('Present')}:</b> {adv.extras.murmur?.present ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
+                  <div><b>{t('Phase')}:</b> {adv.extras.murmur?.phase || '—'}</div>
+                  <div><b>{t('GradeProxy')}:</b> {adv.extras.murmur?.gradeProxy ?? '—'}</div>
+                  <div><b>{t('Confidence')}:</b> {adv.extras.murmur?.confidence!=null ? Math.round(adv.extras.murmur.confidence*100) : '—'}%</div>
+                  <div><b>{t('SysCoverage')}:</b> {adv.extras.murmur?.systolic?.coverage!=null ? Math.round(adv.extras.murmur.systolic.coverage*100): '—'}%</div>
+                  <div><b>{t('SysShape')}:</b> {adv.extras.murmur?.systolic?.shape || '—'}</div>
+                  <div><b>{t('SysPitch')}:</b> {adv.extras.murmur?.systolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+                  <div><b>{t('DiaCoverage')}:</b> {adv.extras.murmur?.diastolic?.coverage!=null ? Math.round(adv.extras.murmur.diastolic.coverage*100): '—'}%</div>
+                  <div><b>{t('DiaShape')}:</b> {adv.extras.murmur?.diastolic?.shape || '—'}</div>
+                  <div><b>{t('DiaPitch')}:</b> {adv.extras.murmur?.diastolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
+                </>
+              </div>
+            </div>
+            {/* Rhythm */}
+            <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
+              <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
+                  <div title={openRhythm? t('Collapse') : t('Expand')} className={"vh-arrow "+(openRhythm?"vh-rot":"")} onClick={()=>setOpenRhythm(v=>!v)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                  </div>
+                  {/* heartbeat icon */}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2-5 3 10 2-5h5" stroke="#0f172a" strokeWidth="1.5"/><path d="M4 7a5 5 0 0 1 8-1 5 5 0 0 1 8 1c0 7-8 10-8 10S4 14 4 7z" stroke="#0f172a" strokeWidth="1.5"/></svg>
+                  <span>{t('RhythmLabel')}</span>
+                </div>
+              </div>
+              <div className={"vh-collapse "+(openRhythm?"open":"closed")}>
+                <>
+                  <div><b>{t('RRCV')}:</b> {adv.extras.rhythm?.rrCV?.toFixed?.(3) || '—'}</div>
+                  <div><b>pNN50:</b> {adv.extras.rhythm?.pNN50?.toFixed?.(2) || '—'}</div>
+                  <div><b>{t('SampleEntropy')}:</b> {adv.extras.rhythm?.sampleEntropy?.toFixed?.(2) || '—'}</div>
+                  <div><b>{t('PoincareSD12')}:</b> {adv.extras.rhythm?.poincareSD1?.toFixed?.(3) || '—'} / {adv.extras.rhythm?.poincareSD2?.toFixed?.(3) || '—'}</div>
+                  <div><b>AF:</b> {adv.extras.rhythm?.afSuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
+                  <div><b>{lang==='zh'?'早搏':'Ectopy'}:</b> {adv.extras.rhythm?.ectopySuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
+                </>
+              </div>
+            </div>
+          </div>
           </div>
         </>
       )}
 
       {(features || extra) && (
         <>
-          <div style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px' }}>{t('Features')}</div>
+          <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div title={openFeatures? t('Collapse') : t('Expand')} className={"vh-arrow "+(openFeatures?"vh-rot":"")} onClick={()=>setOpenFeatures(v=>!v)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+              </div>
+              {/* sliders icon */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7h12M4 17h12M16 7v-2M8 17v2M12 12h8M12 12v-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
+              <span>{t('Features')}</span>
+            </div>
+          </div>
+          <div className={"vh-collapse "+(openFeatures?"open":"closed")}>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
-            {features && (
-              <>
-                <div><b>{t('Duration')}:</b> {features.durationSec?.toFixed?.(2)}</div>
-                <div><b>{t('SampleRate')}:</b> {features.sampleRate}</div>
-                <div><b>{t('RMS')}:</b> {features.rms?.toFixed?.(4)}</div>
-                <div><b>{t('ZCR')}:</b> {Math.round(features.zcrPerSec)}</div>
-                {features.peakRatePerSec!=null && <div><b>{t('PeakRate')}:</b> {features.peakRatePerSec?.toFixed?.(2)}</div>}
-              </>
-            )}
-            {extra && (
-              <>
-                <div><b>{t('SpectralCentroid')}:</b> {Math.round(extra.spectralCentroid)} Hz</div>
-                <div><b>{t('Bandwidth')}:</b> {Math.round(extra.spectralBandwidth)} Hz</div>
-                <div><b>{t('Rolloff95')}:</b> {Math.round(extra.rolloff95)} Hz</div>
-                <div><b>{t('Flatness')}:</b> {extra.spectralFlatness?.toFixed?.(4)}</div>
-                <div><b>{t('Flux')}:</b> {extra.spectralFlux?.toFixed?.(4)}</div>
-                <div><b>{t('CrestFactor')}:</b> {extra.crestFactor?.toFixed?.(2)}</div>
-              </>
-            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
+              {features && (
+                <>
+                  <div><b>{t('Duration')}:</b> {features.durationSec?.toFixed?.(2)}</div>
+                  <div><b>{t('SampleRate')}:</b> {features.sampleRate}</div>
+                  <div><b>{t('RMS')}:</b> {features.rms?.toFixed?.(4)}</div>
+                  <div><b>{t('ZCR')}:</b> {Math.round(features.zcrPerSec)}</div>
+                  {features.peakRatePerSec!=null && <div><b>{t('PeakRate')}:</b> {features.peakRatePerSec?.toFixed?.(2)}</div>}
+                </>
+              )}
+              {extra && (
+                <>
+                  <div><b>{t('SpectralCentroid')}:</b> {Math.round(extra.spectralCentroid)} Hz</div>
+                  <div><b>{t('Bandwidth')}:</b> {Math.round(extra.spectralBandwidth)} Hz</div>
+                  <div><b>{t('Rolloff95')}:</b> {Math.round(extra.rolloff95)} Hz</div>
+                  <div><b>{t('Flatness')}:</b> {extra.spectralFlatness?.toFixed?.(4)}</div>
+                  <div><b>{t('Flux')}:</b> {extra.spectralFlux?.toFixed?.(4)}</div>
+                  <div><b>{t('CrestFactor')}:</b> {extra.crestFactor?.toFixed?.(2)}</div>
+                </>
+              )}
+            </div>
           </div>
           </div>
         </>
       )}
 
       {/* AI Analysis */}
-      <div style={{ display:'flex', alignItems:'center', gap:8, margin:'12px 0 6px' }}>
-        <div style={{ fontSize: 18, fontWeight: 600 }}>{t('AIAnalysis')}</div>
-        {aiText && (
-          <button onClick={()=> setChatOpen(true)} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
-            {t('StartConversation')}
-          </button>
-        )}
+      <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, margin:'12px 0 6px' }}>
+        <div style={{ fontSize: 18, fontWeight: 600, display:'flex', alignItems:'center', gap:8 }}>
+          <div title={openAI? t('Collapse') : t('Expand')} className={"vh-arrow "+(openAI?"vh-rot":"")} onClick={()=>setOpenAI(v=>!v)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+          </div>
+          {/* sparkles icon */}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z" stroke="#0f172a" strokeWidth="1.2"/></svg>
+          <span>{t('AIAnalysis')}</span>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {aiText && (
+            <button onClick={()=> setChatOpen(true)} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
+              {t('StartConversation')}
+            </button>
+          )}
+        </div>
       </div>
+      <div className={"vh-collapse "+(openAI?"open":"closed")}>
       <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
         {!aiText && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-          <button disabled={aiBusy || aiSubmitted || !!aiText || !pcmPayload} onClick={async ()=>{
-            if (!pcmPayload || aiSubmitted) return; setAiBusy(true); setAiErr('');
+          <button disabled={aiBusy} onClick={async ()=>{
+            setAiBusy(true); setAiErr('');
             try{
-              const r = await fetch(ANALYSIS_BASE + `/records/${id}/ai_start`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ ...pcmPayload, lang }) });
-              const j = await r.json(); if (!r.ok || j?.error) throw new Error(j?.error || 'start failed');
-              // inform submitted; we don't poll to respect background requirement
-              setAiErr('');
-              setAiSubmitted(true);
-              try { localStorage.setItem(`vh_ai_pending_${id}_${lang}`, '1'); } catch {}
-            }catch(e){ setAiErr((e?.message)||'AI analysis failed'); setAiSubmitted(false); try { localStorage.removeItem(`vh_ai_pending_${id}_${lang}`); } catch {} }
+              const sys = lang==='zh'
+                ? '你是一名心血管科医生助手。请基于提供的“临床级PCG指标”和“基础特征”生成一份简洁、可信、可执行的报告，包含：结论、证据与解释、建议（不少于3条，避免夸张医疗承诺）。不要杜撰未给出的测量值。'
+                : 'You are a cardiology assistant. Using the provided clinical PCG metrics and basic features, produce a concise, reliable, actionable report with: Conclusion, Evidence & Interpretation, and 3+ concrete Advice items. Do not fabricate measurements not provided.';
+              const ctx = [];
+              try { if (adv) ctx.push('clinical_pcg:\n```json\n'+JSON.stringify(adv)+'\n```'); } catch {}
+              try { if (features) ctx.push('features:\n```json\n'+JSON.stringify(features)+'\n```'); } catch {}
+              const messages = [
+                { role: 'system', content: sys },
+                { role: 'user', content: (lang==='zh'?'以下是分析指标：\n':'Here are the analysis metrics:\n') + ctx.join('\n\n') }
+              ];
+              const resp = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }) });
+              const j = await resp.json().catch(()=>({}));
+              if (!resp.ok || j?.error) throw new Error(j?.error || 'chat failed');
+              const text = j?.text || '';
+              setAiText(text);
+              // Persist to analysis record for this language
+              const ts = new Date().toISOString();
+              try {
+                await fetch(ANALYSIS_BASE + `/records/${id}`, {
+                  method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ ai: { model: j?.model || 'llm', texts: { [lang]: text } }, aiGeneratedAt: ts })
+                });
+                setMeta(m => ({ ...(m||{}), ai: { ...((m&&m.ai)||{}), texts: { ...(((m&&m.ai)&&m.ai.texts)||{}), [lang]: text } }, ai_generated_at: ts }));
+              } catch {}
+            }catch(e){ setAiErr((e?.message)||'AI analysis failed'); }
             finally{ setAiBusy(false); }
-          }} className="vh-btn vh-btn-primary" style={{ padding:'8px 12px', opacity: (aiBusy || aiSubmitted) ? 0.7 : 1, cursor: pcmPayload?'pointer':'not-allowed' }}>
-            {aiBusy ? t('Analyzing') : aiSubmitted ? t('SubmittedBG') : t('RunAI')}
+          }} className="vh-btn vh-btn-primary" style={{ padding:'8px 12px', opacity: aiBusy ? 0.7 : 1, cursor: 'pointer' }}>
+            {aiBusy ? t('Analyzing') : t('RunAI')}
           </button>
-          {/* Remove duplicate submitted hint since button text shows it */}
           {aiErr && <span style={{ color:'#b91c1c', fontSize:13 }}>{aiErr}</span>}
         </div>
         )}
-        {aiMetrics && (
-          <div style={{ marginTop:8, color:'#0f172a' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
-              <div><b>{t('HRShort')}:</b> {aiMetrics.heart_rate_bpm? aiMetrics.heart_rate_bpm.toFixed(0): '—'} bpm</div>
-              <div><b>{t('S1S2Amp')}:</b> {aiMetrics.s1_s2_amplitude_ratio?.toFixed?.(2) || '—'}</div>
-              <div><b>{t('SystoleSec')}:</b> {aiMetrics.systole_interval_sec?.mean?.toFixed?.(3) || '—'} ({aiMetrics.systole_interval_sec?.count||0})</div>
-              <div><b>{t('DiastoleSec')}:</b> {aiMetrics.diastole_interval_sec?.mean?.toFixed?.(3) || '—'} ({aiMetrics.diastole_interval_sec?.count||0})</div>
-              <div><b>{t('HFRatio')}:</b> {aiMetrics.high_freq_energy_ratio?.toFixed?.(3) || '—'}</div>
-            </div>
-            {aiMetrics.interpretation && (
-              <div style={{ marginTop:8, fontSize:13, color:'#475569' }}>
-                <div>{aiMetrics.interpretation.heart_rate_comment || ''}</div>
-                <div>{aiMetrics.interpretation.amplitude_comment || ''}</div>
-                <div>{aiMetrics.interpretation.murmur_comment || ''}</div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* AI metrics block removed — AI now uses existing metrics in prompt */}
         {aiText && (
           <>
             <div
               style={{ marginTop:12, lineHeight:1.6, color:'#0f172a' }}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(aiText) }}
             />
-            <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>{t('AIGeneratedAt') + ' ' + (aiMetrics?.generated_at ? new Date(aiMetrics.generated_at).toLocaleString() : meta?.ai_generated_at ? new Date(meta.ai_generated_at).toLocaleString() : '')}</div>
+            <div style={{ marginTop:8, fontSize:12, color:'#64748b' }}>{t('AIGeneratedAt') + ' ' + (meta?.ai_generated_at ? new Date(meta.ai_generated_at).toLocaleString() : '')}</div>
           </>
         )}
+      </div>
       </div>
       </div>
       {chatOpen && (

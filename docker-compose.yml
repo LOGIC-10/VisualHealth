@@ -74,6 +74,7 @@ services:
       - DATABASE_URL=postgres://analysis_user:analysis_pass@analysis-db:5432/analysis_db
       - VIZ_BASE=http://viz-service:4006
       - LLM_SVC=http://llm-service:4007
+      - VIZ_USE_HSMM=1
     ports:
       - "4004:4004"
     depends_on:

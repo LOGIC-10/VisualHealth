@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 4004;
 const { Pool } = pkg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const VIZ_BASE = process.env.VIZ_BASE || 'http://viz-service:4006';
+const USE_HSMM = (process.env.VIZ_USE_HSMM === '1');
 const LLM_SVC = process.env.LLM_SVC || 'http://llm-service:4007';
 
 async function init() {
@@ -344,9 +345,9 @@ app.post('/records/:id/ai_start', async (req, res) => {
           try {
             let resp2 = null;
             if (sampleRate && Array.isArray(pcm) && pcm.length>0) {
-              resp2 = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate, pcm }) });
+              resp2 = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate, pcm, useHsmm: USE_HSMM }) });
             } else if (recMediaId) {
-              resp2 = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers: { 'Content-Type':'application/json', Authorization: req.headers.authorization || '' }, body: JSON.stringify({ mediaId: recMediaId }) });
+              resp2 = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers: { 'Content-Type':'application/json', Authorization: req.headers.authorization || '' }, body: JSON.stringify({ mediaId: recMediaId, useHsmm: USE_HSMM }) });
             }
             if (resp2 && resp2.ok) {
               advMetrics = await resp2.json();

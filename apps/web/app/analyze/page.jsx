@@ -18,10 +18,15 @@ export default function AnalyzePage() {
   const [navigating, setNavigating] = useState(false);
   const [guestNoticeOpen, setGuestNoticeOpen] = useState(false);
   const [guestErr, setGuestErr] = useState('');
+  const [useHsmm, setUseHsmm] = useState(false);
+  const [quality, setQuality] = useState(null);
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
     setToken(t || ''); // empty string means visitor
+  }, []);
+  useEffect(() => {
+    try { setUseHsmm(localStorage.getItem('vh_use_hsmm') === '1'); } catch {}
   }, []);
 
   // Warn guests about leaving the page (analysis will be discarded)
@@ -84,11 +89,24 @@ export default function AnalyzePage() {
 
     // If logged in, persist upload + record automatically
     setSavedId(null);
+
+    // 1) Quality gate (do not run analysis if not PCG or low quality)
+    try {
+      const q = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) }) });
+      const qj = await q.json();
+      setQuality(qj);
+      if (!qj.isHeart || !qj.qualityOk) {
+        setNavigating(false);
+        setGuestNoticeOpen(true);
+        setGuestErr('检测到音频不是心音或质量不达标，请重新录制靠近胸前、环境安静下的心音。');
+        return;
+      }
+    } catch {}
     if (token) {
-      try {
-        setSaving(true);
-        const fd = new FormData();
-        fd.append('file', file);
+        try {
+          setSaving(true);
+          const fd = new FormData();
+          fd.append('file', file);
         const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd
         });
@@ -105,7 +123,7 @@ export default function AnalyzePage() {
         try {
           const payload = { sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) };
           const [advResp, specResp] = await Promise.all([
-            fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }),
+            fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
             fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
           ]);
           let specId = null; let adv = null;
@@ -145,7 +163,18 @@ export default function AnalyzePage() {
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('NewAnalysis')}</h1>
-      <input type="file" accept="audio/*" onChange={handleFile} />
+      <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <input type="file" accept="audio/*" onChange={handleFile} />
+        <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:14 }}>
+          <input type="checkbox" checked={useHsmm} onChange={e=>{ setUseHsmm(e.target.checked); try { localStorage.setItem('vh_use_hsmm', e.target.checked ? '1' : '0'); } catch {} }} />
+          使用 HSMM 分割（实验特性）
+        </label>
+      </div>
+      {quality && (!quality.isHeart || !quality.qualityOk) && (
+        <div style={{ marginTop:12, padding:12, border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b', borderRadius:12 }}>
+          检测到音频不是心音或质量不达标：请在安静环境使用胸前位置重新录制，时长≥6秒；尽量减少呼吸/摩擦噪声。
+        </div>
+      )}
       {/* Guest notice and actions */}
       {!token && guestNoticeOpen && (
         <div style={{ marginTop:12, padding:12, border:'1px solid #e5e7eb', borderRadius:12, background:'#fff' }}>

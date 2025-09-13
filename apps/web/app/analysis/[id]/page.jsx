@@ -1073,23 +1073,23 @@ export default function AnalysisDetail({ params }) {
       <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div title={openSpec? t('Collapse') : t('Expand')} className={"vh-arrow "+(openSpec?"vh-rot":"")} onClick={()=>setOpenSpec(v=>!v)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
           </div>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 18V8M8 18V4M12 18V10M16 18V6M20 18V12" stroke="#0f172a" strokeWidth="1.5"/></svg>
           <span>{t('Spectrogram')}</span>
         </div>
       </div>
       {/* Static spectrogram below playback bar (colored, with axes) */}
-      {openSpec && (
-      <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', minHeight: 200, position:'relative' }}>
-        {!specUrl && (
-          <div style={{ position:'absolute', inset:0, display:'grid', placeItems:'center', color:'#64748b' }}>
-            <div className="vh-spin" />
-          </div>
-        )}
-        {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
+      <div className={"vh-collapse "+(openSpec?"open":"closed")}>
+        <div style={{ marginTop: 12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', minHeight: 200, position:'relative' }}>
+          {!specUrl && (
+            <div style={{ position:'absolute', inset:0, display:'grid', placeItems:'center', color:'#64748b' }}>
+              <div className="vh-spin" />
+            </div>
+          )}
+          {specUrl && <img src={specUrl} alt="spectrogram" style={{ display:'block', width:'100%', height:'auto' }} />}
+        </div>
       </div>
-      )}
       <style>{`.vh-spin{width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#2563eb;border-radius:9999px;animation:vh-rot 0.8s linear infinite}@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
       <style>{`
         .vh-range{ -webkit-appearance:none; appearance:none; height:6px; background:#e5e7eb; border-radius:9999px; outline:none; }
@@ -1103,6 +1103,9 @@ export default function AnalysisDetail({ params }) {
         .vh-arrow{ opacity:0; transition: opacity 120ms ease, transform 120ms ease; cursor:pointer; pointer-events:none; display:inline-flex; }
         .vh-sec-head:hover .vh-arrow{ opacity:1; pointer-events:auto; }
         .vh-rot{ transform: rotate(90deg); }
+        .vh-collapse{ overflow:hidden; transition:max-height 200ms ease, opacity 200ms ease; opacity:1; }
+        .vh-collapse.closed{ max-height:0; opacity:0; pointer-events:none; }
+        .vh-collapse.open{ max-height:4000px; opacity:1; }
       `}</style>
 
       {/* Clinical PCG Analysis */}
@@ -1111,13 +1114,13 @@ export default function AnalysisDetail({ params }) {
           <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <div title={openClinical? t('Collapse'):t('Expand')} className={"vh-arrow "+(openClinical?"vh-rot":"")} onClick={()=>setOpenClinical(v=>!v)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
             </div>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
               <span>{t('ClinicalAnalysis')}</span>
             </div>
           </div>
-          {openClinical && (
+          <div className={"vh-collapse "+(openClinical?"open":"closed")}>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             <div><b>{t('HeartRate')}:</b> {adv.hrBpm ? adv.hrBpm.toFixed(0) : '—'}</div>
@@ -1142,7 +1145,7 @@ export default function AnalysisDetail({ params }) {
           </div>
             <div style={{ gridColumn:'1 / -1', marginTop: 6, fontSize: 12, color:'#64748b' }}>{t('Disclaimer')}</div>
           </div>
-          )}
+          </div>
         </>
       )}
 
@@ -1151,68 +1154,69 @@ export default function AnalysisDetail({ params }) {
           <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               <div title={openExtras? t('Collapse') : t('Expand')} className={"vh-arrow "+(openExtras?"vh-rot":"")} onClick={()=>setOpenExtras(v=>!v)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
               </div>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" stroke="#0f172a" strokeWidth="1.2"/></svg>
               <span>{t('Extras')}</span>
             </div>
           </div>
-          <div style={{ display: openExtras ? 'grid' : 'none', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+          <div className={"vh-collapse "+(openExtras?"open":"closed")}>
+          <div style={{ display: 'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
             {/* Respiration & S2 split typing */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
               <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
               <div title={openResp? t('Collapse') : t('Expand')} className={"vh-arrow "+(openResp?"vh-rot":"")} onClick={()=>setOpenResp(v=>!v)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
                   </div>
                   {/* lungs icon */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 3v8c0 1.657-1.343 3-3 3H4a3 3 0 0 1-3-3V9c0-1.105.895-2 2-2h1c.552 0 1 .448 1 1v3" stroke="#0f172a" strokeWidth="1.5"/><path d="M15 3v8c0 1.657 1.343 3 3 3h2a3 3 0 0 0 3-3V9c0-1.105-.895-2-2-2h-1c-.552 0-1 .448-1 1v3" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('RespAndSplit')}</span>
                 </div>
               </div>
-              {openResp && (
+              <div className={"vh-collapse "+(openResp?"open":"closed")}>
                 <>
                   <div><b>{t('RespRate')}:</b> {adv.extras.respiration?.respRate ? adv.extras.respiration.respRate.toFixed(1) : '—'} /min</div>
                   <div><b>{t('RespDominance')}:</b> {adv.extras.respiration?.respDominance?.toFixed?.(2) || '—'}</div>
                   <div><b>{t('S2SplitType')}:</b> {adv.extras.respiration?.s2SplitType || '—'}</div>
                   <div><b>{t('S2SplitCorr')}:</b> {adv.extras.respiration?.s2SplitCorr?.toFixed?.(2) || '—'}</div>
                 </>
-              )}
+              </div>
             </div>
             {/* Additional sounds */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
               <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
                   <div title={openSounds? t('Collapse') : t('Expand')} className={"vh-arrow "+(openSounds?"vh-rot":"")} onClick={()=>setOpenSounds(v=>!v)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
                   </div>
                   {/* spark/wave icon */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12c2 0 2-6 4-6s2 12 4 12 2-12 4-12 2 6 4 6" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('AdditionalSounds')}</span>
                 </div>
               </div>
-              {openSounds && (
+              <div className={"vh-collapse "+(openSounds?"open":"closed")}>
                 <>
                   <div><b>{t('S3Prob')}:</b> {(adv.extras.additionalSounds?.s3Prob!=null)? Math.round(adv.extras.additionalSounds.s3Prob*100): '—'}%</div>
                   <div><b>{t('S4Prob')}:</b> {(adv.extras.additionalSounds?.s4Prob!=null)? Math.round(adv.extras.additionalSounds.s4Prob*100): '—'}%</div>
                   <div><b>{t('EjectionClickProb')}:</b> {(adv.extras.additionalSounds?.ejectionClickProb!=null)? Math.round(adv.extras.additionalSounds.ejectionClickProb*100): '—'}%</div>
                   <div><b>{t('OpeningSnapProb')}:</b> {(adv.extras.additionalSounds?.openingSnapProb!=null)? Math.round(adv.extras.additionalSounds.openingSnapProb*100): '—'}%</div>
                 </>
-              )}
+              </div>
             </div>
             {/* Murmur descriptors */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
               <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
                   <div title={openMurmur? t('Collapse') : t('Expand')} className={"vh-arrow "+(openMurmur?"vh-rot":"")} onClick={()=>setOpenMurmur(v=>!v)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
                   </div>
                   {/* stethoscope icon */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 3v5a4 4 0 1 0 8 0V3" stroke="#0f172a" strokeWidth="1.5"/><path d="M14 14a4 4 0 0 1-8 0" stroke="#0f172a" strokeWidth="1.5"/><circle cx="18" cy="10" r="2" stroke="#0f172a" strokeWidth="1.5"/><path d="M18 12v4a4 4 0 0 1-4 4h-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('MurmurScreening')}</span>
                 </div>
               </div>
-              {openMurmur && (
+              <div className={"vh-collapse "+(openMurmur?"open":"closed")}>
                 <>
                   <div><b>{t('Present')}:</b> {adv.extras.murmur?.present ? (lang==='zh'?'是':'Yes') : (lang==='zh'?'否':'No')}</div>
                   <div><b>{t('Phase')}:</b> {adv.extras.murmur?.phase || '—'}</div>
@@ -1225,21 +1229,21 @@ export default function AnalysisDetail({ params }) {
                   <div><b>{t('DiaShape')}:</b> {adv.extras.murmur?.diastolic?.shape || '—'}</div>
                   <div><b>{t('DiaPitch')}:</b> {adv.extras.murmur?.diastolic?.pitchHz?.toFixed?.(0) || '—'} Hz</div>
                 </>
-              )}
+              </div>
             </div>
             {/* Rhythm */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
               <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8, fontWeight:600 }}>
                   <div title={openRhythm? t('Collapse') : t('Expand')} className={"vh-arrow "+(openRhythm?"vh-rot":"")} onClick={()=>setOpenRhythm(v=>!v)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
                   </div>
                   {/* heartbeat icon */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2-5 3 10 2-5h5" stroke="#0f172a" strokeWidth="1.5"/><path d="M4 7a5 5 0 0 1 8-1 5 5 0 0 1 8 1c0 7-8 10-8 10S4 14 4 7z" stroke="#0f172a" strokeWidth="1.5"/></svg>
                   <span>{t('RhythmLabel')}</span>
                 </div>
               </div>
-              {openRhythm && (
+              <div className={"vh-collapse "+(openRhythm?"open":"closed")}>
                 <>
                   <div><b>{t('RRCV')}:</b> {adv.extras.rhythm?.rrCV?.toFixed?.(3) || '—'}</div>
                   <div><b>pNN50:</b> {adv.extras.rhythm?.pNN50?.toFixed?.(2) || '—'}</div>
@@ -1248,7 +1252,7 @@ export default function AnalysisDetail({ params }) {
                   <div><b>AF:</b> {adv.extras.rhythm?.afSuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
                   <div><b>{lang==='zh'?'早搏':'Ectopy'}:</b> {adv.extras.rhythm?.ectopySuspected ? (lang==='zh'?'可疑':'Suspected') : (lang==='zh'?'否':'No')}</div>
                 </>
-              )}
+              </div>
             </div>
           </div>
         </>
@@ -1259,14 +1263,14 @@ export default function AnalysisDetail({ params }) {
           <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '12px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
               <div title={openFeatures? t('Collapse') : t('Expand')} className={"vh-arrow "+(openFeatures?"vh-rot":"")} onClick={()=>setOpenFeatures(v=>!v)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
               </div>
               {/* sliders icon */}
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7h12M4 17h12M16 7v-2M8 17v2M12 12h8M12 12v-2" stroke="#0f172a" strokeWidth="1.5"/></svg>
               <span>{t('Features')}</span>
             </div>
           </div>
-          {openFeatures && (
+          <div className={"vh-collapse "+(openFeatures?"open":"closed")}>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
               {features && (
@@ -1290,7 +1294,7 @@ export default function AnalysisDetail({ params }) {
               )}
             </div>
           </div>
-          )}
+          </div>
         </>
       )}
 
@@ -1298,7 +1302,7 @@ export default function AnalysisDetail({ params }) {
       <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, margin:'12px 0 6px' }}>
         <div style={{ fontSize: 18, fontWeight: 600, display:'flex', alignItems:'center', gap:8 }}>
           <div title={openAI? t('Collapse') : t('Expand')} className={"vh-arrow "+(openAI?"vh-rot":"")} onClick={()=>setOpenAI(v=>!v)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#0f172a"><path d="M8 5l8 7-8 7z"/></svg>
           </div>
           {/* sparkles icon */}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.5 4.5L18 8l-4.5 1.5L12 14l-1.5-4.5L6 8l4.5-1.5L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z" stroke="#0f172a" strokeWidth="1.2"/></svg>
@@ -1312,7 +1316,7 @@ export default function AnalysisDetail({ params }) {
           )}
         </div>
       </div>
-      {openAI && (
+      <div className={"vh-collapse "+(openAI?"open":"closed")}>
       <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
         {!aiText && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
@@ -1362,7 +1366,7 @@ export default function AnalysisDetail({ params }) {
           </>
         )}
       </div>
-      )}
+      </div>
       </div>
       {chatOpen && (
         <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', marginTop: 12, minWidth:300, maxWidth:420, alignSelf:'start', position:'sticky', top: navOffset, height: `calc(100vh - ${navOffset + 16}px)` }}>

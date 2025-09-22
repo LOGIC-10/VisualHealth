@@ -2,8 +2,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from '../../components/i18n';
+import { API } from '../../lib/api';
 
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
+const AUTH_BASE = API.auth;
+const MEDIA_BASE = API.media;
+const ANALYSIS_BASE = API.analysis;
+const VIZ_BASE = API.viz;
 
 export default function Onboarding(){
   const { t, lang } = useI18n();
@@ -46,8 +50,6 @@ export default function Onboarding(){
             const bin = Uint8Array.from(atob(p.base64), c=>c.charCodeAt(0));
             const blob = new Blob([bin], { type: p.type || 'audio/wav' });
             const fd = new FormData(); fd.append('file', new File([blob], p.name, { type: p.type||'application/octet-stream' }));
-            const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
-            const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
             // Upload media
             const up = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${tkn}` }, body: fd });
             const meta = await up.json(); if (!up.ok || meta?.error || !meta?.id) throw new Error(meta?.error || 'upload failed');
@@ -60,7 +62,6 @@ export default function Onboarding(){
               const buf = await ctx.decodeAudioData(arr.slice(0));
               const ch = buf.getChannelData(0); const targetSR = 8000; const ratio = Math.max(1, Math.floor(buf.sampleRate/targetSR));
               const ds = new Float32Array(Math.ceil(ch.length/ratio)); for (let i=0;i<ds.length;i++) ds[i] = ch[i*ratio]||0;
-              const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
               const r = await fetch(VIZ_BASE + '/features_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate: Math.round(buf.sampleRate/ratio), pcm: Array.from(ds) }) });
               if (r.ok) features = await r.json();
             } catch {}

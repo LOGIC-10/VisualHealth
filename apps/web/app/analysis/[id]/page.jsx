@@ -3,17 +3,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
 import { renderMarkdown } from '../../../components/markdown';
+import { API } from '../../../lib/api';
 
 import WaveSurfer from 'wavesurfer.js';
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js';
 import ZoomPlugin from 'wavesurfer.js/dist/plugins/zoom.esm.js';
 
-const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
+const VIZ_BASE = API.viz;
+const AUTH_BASE = API.auth;
 
-const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
-const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
-const LLM_BASE = process.env.NEXT_PUBLIC_API_LLM || 'http://localhost:4007';
+const MEDIA_BASE = API.media;
+const ANALYSIS_BASE = API.analysis;
+const LLM_BASE = API.llm;
 
 export default function AnalysisDetail({ params }) {
   const { t, lang } = useI18n();
@@ -551,7 +552,7 @@ export default function AnalysisDetail({ params }) {
               try {
                 const fd = new FormData();
                 fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
-                const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
+                const up = await fetch(API.media + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
                 const j = await up.json();
                 if (j?.id) {
                   await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ specMediaId: j.id, audioHash }) });

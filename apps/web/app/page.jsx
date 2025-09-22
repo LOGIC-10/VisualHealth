@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useI18n } from '../components/i18n';
 import { renderMarkdown } from '../components/markdown';
 import WaveSurfer from 'wavesurfer.js';
+import { API } from '../lib/api';
 // Spectrogram plugin removed; use server-rendered demo spectrogram instead
 
 function makeHeartbeatWav(seconds=6, sampleRate=8000){
@@ -19,7 +20,7 @@ function makeHeartbeatWav(seconds=6, sampleRate=8000){
   return new Blob([dv], { type:'audio/wav' });
 }
 
-const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
+const VIZ_BASE = API.viz;
 
 function Demo(){
   const waveWrapRef = useRef(null); const audioRef = useRef(null); const wsRef = useRef(null); const urlRef = useRef('');
@@ -146,8 +147,8 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ total: 0, done: 0 });
   const fileInputRef = useRef(null);
-  const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
-  const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+  const ANALYSIS_BASE = API.analysis;
+  const MEDIA_BASE = API.media;
   useEffect(()=>{ setToken(localStorage.getItem('vh_token')); },[]);
 
   function openGuide(){ if(!token){ window.location.href='/auth'; return; } setGuide(true); }
@@ -190,9 +191,9 @@ export default function HomePage() {
         <div style={{ maxWidth: 920, margin: '0 auto' }}>
           <h1 style={{ fontSize: 56, lineHeight: 1.05, margin: 0 }}>{t('HomeHeroTitle')}</h1>
           <p style={{ fontSize: 20, marginTop: 16 }}>{t('HomeHeroDesc')}</p>
-          <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-            <button onClick={openGuide} className="vh-btn vh-btn-primary" style={{ padding:'12px 16px', borderRadius:12 }}>{t('GetStarted')}</button>
-            <Link href="/community" style={{ padding: '12px 16px', background: '#e5e7eb', color: '#111', borderRadius: 12, textDecoration: 'none' }}>{t('ExploreCommunity')}</Link>
+          <div style={{ display: 'flex', gap: 16, marginTop: 28 }}>
+            <button onClick={openGuide} className="vh-btn vh-btn-primary vh-btn-lg">{t('GetStarted')}</button>
+            <Link href="/community" className="vh-btn vh-btn-outline vh-btn-lg" style={{ textDecoration: 'none' }}>{t('ExploreCommunity')}</Link>
           </div>
         </div>
       </section>
@@ -236,9 +237,9 @@ export default function HomePage() {
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop:16, display:'flex', gap:12 }}>
-                <button onClick={openGuide} className="vh-btn vh-btn-primary" style={{ padding:'12px 16px', borderRadius:12 }}>{t('GetStarted')}</button>
-                <Link href="/analysis" style={{ padding:'12px 16px', borderRadius:12, background:'#e5e7eb', color:'#111', textDecoration:'none' }}>{t('Analysis')}</Link>
+              <div style={{ marginTop:20, display:'flex', gap:16, flexWrap:'wrap' }}>
+                <button onClick={openGuide} className="vh-btn vh-btn-primary vh-btn-lg">{t('GetStarted')}</button>
+                <Link href="/analysis" className="vh-btn vh-btn-outline vh-btn-lg" style={{ textDecoration:'none' }}>{t('Analysis')}</Link>
               </div>
             </div>
             <div>

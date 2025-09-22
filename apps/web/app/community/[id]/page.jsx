@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
+import { API } from '../../../lib/api';
 
-const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
-const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
+const FEED_BASE = API.feed;
+const MEDIA_BASE = API.media;
+const AUTH_BASE = API.auth;
 
 export default function PostDetail({ params }) {
   const { t, lang } = useI18n();
@@ -320,8 +321,8 @@ function Lightbox({ images, index=0, onClose }){
 }
 
 function CommentItem({ c, depth=0, onReply, replyingId, replyText, setReplyText, onSendReply, token, replyFiles, setReplyFiles, formatRelativeTime, commentMap, lang }){
-  const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
-  const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
+  const MEDIA_BASE = API.media;
+  const FEED_BASE = API.feed;
   const [visible, setVisible] = useState(0);
   const displayName = (cc) => (cc.author_display_name || cc.author_name || cc.author_email || 'User');
   const targetName = (cc) => {

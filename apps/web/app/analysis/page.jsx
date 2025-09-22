@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from '../../components/i18n';
+import { API } from '../../lib/api';
 
-const ANALYSIS_BASE = process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004';
-const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
-const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
+const ANALYSIS_BASE = API.analysis;
+const MEDIA_BASE = API.media;
+const VIZ_BASE = API.viz;
 
 export default function AnalysisListPage() {
   const { t } = useI18n();
@@ -315,9 +316,9 @@ export default function AnalysisListPage() {
           <div style={{ color:'#475569', marginBottom:12 }}>
             你可以先以游客身份体验分析功能（不保存记录），或登录后保存并管理历史记录。
           </div>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            <Link href="/analyze" className="vh-btn vh-btn-outline" style={{ textDecoration:'none', padding:'10px 14px' }}>立即体验（不保存）</Link>
-            <Link href="/auth" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'10px 14px' }}>登录 / 注册并保存</Link>
+          <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+            <Link href="/analyze" className="vh-btn vh-btn-outline vh-btn-lg" style={{ textDecoration:'none' }}>立即体验（不保存）</Link>
+            <Link href="/auth" className="vh-btn vh-btn-primary vh-btn-lg" style={{ textDecoration:'none' }}>登录 / 注册并保存</Link>
           </div>
           <div style={{ marginTop:12, color:'#64748b', fontSize:13 }}>
             小提示：支持 WAV/MP3/M4A 等常见音频；上传后会即时生成频谱图与临床级 PCG 指标。
@@ -333,7 +334,7 @@ export default function AnalysisListPage() {
         <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('AnalysisTitle')}</h1>
         <div style={{ display:'flex', alignItems:'center', gap:8, position:'relative' }}>
           {/* Filter button */}
-          <button onClick={()=>setFiltersOpen(v=>!v)} title="筛选/排序" className="vh-btn vh-btn-outline" style={{ padding:'10px 12px', display:'inline-flex', alignItems:'center', gap:6 }}>
+          <button onClick={()=>setFiltersOpen(v=>!v)} title="筛选/排序" className="vh-btn vh-btn-outline vh-btn-compact" style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
             {/* Filter icon */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z" stroke="#0f172a" strokeWidth="1.5" fill="none"/></svg>
             <span>筛选</span>
@@ -384,7 +385,7 @@ export default function AnalysisListPage() {
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="audio/*" multiple onChange={onFiles} style={{ display:'none' }} />
-          <button onClick={pickFiles} className="vh-btn vh-btn-outline" style={{ padding:'10px 14px' }}>{t('NewAnalysis')}</button>
+          <button onClick={pickFiles} className="vh-btn vh-btn-outline vh-btn-lg">{t('NewAnalysis')}</button>
         </div>
       </div>
       {busy && (

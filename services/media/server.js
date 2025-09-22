@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import multer from 'multer';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -66,6 +67,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 const app = express();
+app.use(compression());
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));

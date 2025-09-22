@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
+import { API } from '../../../lib/api';
 
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
+const AUTH_BASE = API.auth;
 
 export default function VerifyPage(){
   const { t } = useI18n();
@@ -31,4 +32,3 @@ export default function VerifyPage(){
     </div>
   );
 }
-

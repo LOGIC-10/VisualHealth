@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../components/i18n';
+import { API } from '../../lib/api';
 
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
-const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+const AUTH_BASE = API.auth;
+const MEDIA_BASE = API.media;
 
 export default function SettingsPage() {
   const { t, lang } = useI18n();

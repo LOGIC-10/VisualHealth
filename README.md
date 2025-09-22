@@ -20,12 +20,18 @@ VisualHealth — 心音可视化与社区（微服务架构）
 2) 在项目根目录执行：
    - 启动：bash scripts/start.sh
    - 停止：bash scripts/stop.sh
+   默认仅使用 `docker-compose.yml`（生产配置）。如需启用热更新开发模式，显式加上 `VISUALHEALTH_INCLUDE_DEV_OVERRIDE=1` 环境变量，例如 `VISUALHEALTH_INCLUDE_DEV_OVERRIDE=1 bash scripts/start.sh`。
 3) 访问：
    - 前端：http://localhost:3000
    - Auth：http://localhost:4001/health
    - Media：http://localhost:4003/health
    - Analysis：http://localhost:4004/health
-   - Feed：http://localhost:4005/health
+ - Feed：http://localhost:4005/health
+   默认前端通过 `/api/*` 代理请求后端；仅当你绕过 Docker 直接运行 `npm run dev` 时，需在环境中设置 `NEXT_PUBLIC_API_AUTH=http://localhost:4001` 等变量或使用本地反向代理，否则浏览器无法连接各服务。
+
+生产部署建议
+- 仅暴露前端端口（默认 3000，可置于 Nginx/Traefik 反向代理后提供 80/443）；其余服务和数据库现在只在 Compose 网络内互联。
+- 如需本地调试/数据库连通，可以在开发机器上以 `VISUALHEALTH_INCLUDE_DEV_OVERRIDE=1` 启动，override 文件会重新映射 4001/4003… 及 5433–5436 端口。
 
 热更新（前端）
 - 已提供 docker-compose.override.yml，使前端以开发模式运行（next dev），并挂载源码目录。

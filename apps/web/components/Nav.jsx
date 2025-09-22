@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from './i18n';
+import { API } from '../lib/api';
 
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
-const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+const AUTH_BASE = API.auth;
+const MEDIA_BASE = API.media;
 
 export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
   const { t } = useI18n();
@@ -81,18 +82,27 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
       </div>
       <div style={{ display:'flex', alignItems:'center', gap:8 }}>
         {/* Lang toggle */}
-        <button onClick={()=>setLang(l=> l==='en'?'zh':'en')} title={lang==='en'?'切换到中文':'Switch to English'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
+        <button
+          onClick={()=>setLang(l=> l==='en'?'zh':'en')}
+          title={lang==='en'?'切换到中文':'Switch to English'}
+          className="vh-btn vh-btn-outline vh-btn-compact"
+        >
           {lang==='en' ? '中文' : 'EN'}
         </button>
         {/* Theme toggle */}
-        <button onClick={()=>setTheme(t=> t==='dark'?'light':'dark')} title={isDark?'Switch to Light':'切换夜间模式'} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
+        <button
+          onClick={()=>setTheme(t=> t==='dark'?'light':'dark')}
+          title={isDark?'Switch to Light':'切换夜间模式'}
+          className="vh-btn vh-btn-outline vh-btn-compact"
+          style={{ fontSize:16 }}
+        >
           {isDark ? '☀️' : '🌙'}
         </button>
         {!mounted ? (
           // Placeholder to avoid flicker pre-mount
-          <div style={{ width:86, height:36 }} />
+          <div style={{ width:96, height:40 }} />
         ) : !token ? (
-          <Link href="/auth" className="vh-btn vh-btn-outline" style={{ textDecoration:'none' }}>{T('Login')}</Link>
+          <Link href="/auth" className="vh-btn vh-btn-outline vh-btn-compact" style={{ textDecoration:'none' }}>{T('Login')}</Link>
         ) : (
           <div ref={menuRef} style={{ position:'relative' }}>
             <button onClick={() => setOpen(v=>!v)} style={{ display:'flex', alignItems:'center', gap:8, background:'transparent', border:'none', cursor:'pointer' }}>

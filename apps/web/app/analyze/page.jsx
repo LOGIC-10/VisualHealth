@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
-const VIZ_BASE = process.env.NEXT_PUBLIC_API_VIZ || 'http://localhost:4006';
+import { API } from '../../lib/api';
+const VIZ_BASE = API.viz;
 
 export default function AnalyzePage() {
   const router = useRouter();
@@ -79,7 +80,7 @@ export default function AnalyzePage() {
     const ratio = Math.max(1, Math.floor(audioBuf.sampleRate / targetSR));
     const ds = new Float32Array(Math.ceil(channel.length / ratio));
     for (let i = 0; i < ds.length; i++) ds[i] = channel[i * ratio] || 0;
-    const resp = await fetch((process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004') + '/analyze', {
+    const resp = await fetch(API.analysis + '/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) })
@@ -107,12 +108,12 @@ export default function AnalyzePage() {
           setSaving(true);
           const fd = new FormData();
           fd.append('file', file);
-        const up = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', {
+        const up = await fetch(API.media + '/upload', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd
         });
         const meta = await up.json();
         if (!meta?.id) throw new Error('upload failed');
-        const rec = await fetch((process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004') + '/records', {
+        const rec = await fetch(API.analysis + '/records', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: json })
         });
@@ -131,13 +132,13 @@ export default function AnalyzePage() {
             const imgBlob = await specResp.blob();
             const fdu = new FormData();
             fdu.append('file', new File([imgBlob], 'spectrogram.png', { type:'image/png' }));
-            const up2 = await fetch((process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003') + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
+            const up2 = await fetch(API.media + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
             const j2 = await up2.json();
             if (j2?.id) specId = j2.id;
           }
           if (advResp.ok) adv = await advResp.json();
           if (saved?.id && (adv || specId)) {
-            await fetch((process.env.NEXT_PUBLIC_API_ANALYSIS || 'http://localhost:4004') + `/records/${saved.id}`, {
+            await fetch(API.analysis + `/records/${saved.id}`, {
               method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: adv || null, specMediaId: specId || null })
             });
           }

@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from '../../components/i18n';
+import { API } from '../../lib/api';
 
-const AUTH_BASE = process.env.NEXT_PUBLIC_API_AUTH || 'http://localhost:4001';
+const AUTH_BASE = API.auth;
 
 export default function AuthPage() {
   const { t } = useI18n();
@@ -66,13 +67,25 @@ export default function AuthPage() {
   }
 
   return (
-    <div style={{ maxWidth: 460, margin: '24px auto', padding: '0 24px' }}>
-      <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-        <button onClick={()=>{ setMode('login'); setErr(''); setOk(''); }} className={mode==='login'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('LoginTitle')}</button>
-        <button onClick={()=>{ setMode('signup'); setErr(''); setOk(''); }} className={mode==='signup'? 'vh-btn vh-btn-primary':'vh-btn vh-btn-outline'}>{t('SignupTitle')}</button>
+    <div style={{ maxWidth: 560, margin: '36px auto', padding: '0 24px' }}>
+      <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+        <button
+          onClick={()=>{ setMode('login'); setErr(''); setOk(''); }}
+          className={mode==='login'? 'vh-btn vh-btn-primary vh-btn-lg':'vh-btn vh-btn-outline vh-btn-lg'}
+          style={{ minWidth:140 }}
+        >
+          {t('LoginTitle')}
+        </button>
+        <button
+          onClick={()=>{ setMode('signup'); setErr(''); setOk(''); }}
+          className={mode==='signup'? 'vh-btn vh-btn-primary vh-btn-lg':'vh-btn vh-btn-outline vh-btn-lg'}
+          style={{ minWidth:140 }}
+        >
+          {t('SignupTitle')}
+        </button>
       </div>
-      <form onSubmit={onSubmit} style={{ display:'grid', gap:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16 }}>
-        <div style={{ fontSize:22, fontWeight:600 }}>{mode==='login'? t('LoginTitle') : mode==='signup'? t('SignupTitle') : t('ForgotPassword')}</div>
+      <form onSubmit={onSubmit} style={{ display:'grid', gap:14, background:'#fff', border:'1px solid #e5e7eb', borderRadius:16, padding:24, boxShadow:'0 12px 32px rgba(15,23,42,0.08)' }}>
+        <div style={{ fontSize:28, fontWeight:700 }}>{mode==='login'? t('LoginTitle') : mode==='signup'? t('SignupTitle') : t('ForgotPassword')}</div>
         {(mode==='login'||mode==='signup'||mode==='forgot') && (
           <>
             <input name="email" type="email" placeholder={t('Email')} value={email} onChange={e=>setEmail(e.target.value)} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
@@ -88,12 +101,12 @@ export default function AuthPage() {
         {mode==='signup' && (
           <input name="displayName" placeholder={t('DisplayName')} value={displayName} onChange={e=>setDisplayName(e.target.value)} style={{ padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
         )}
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          <button type="submit" disabled={!canSubmit || busy} className="vh-btn vh-btn-primary">
+        <div style={{ display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
+          <button type="submit" disabled={!canSubmit || busy} className="vh-btn vh-btn-primary vh-btn-lg">
             {mode==='login'? t('Login') : mode==='signup' ? t('CreateAccount') : t('SendResetEmail')}
           </button>
           {mode==='login' && (
-            <button type="button" onClick={()=> setMode('forgot')} className="vh-btn vh-btn-link">{t('ForgotPassword')}?</button>
+            <button type="button" onClick={()=> setMode('forgot')} className="vh-btn vh-btn-link" style={{ padding:'0 6px' }}>{t('ForgotPassword')}?</button>
           )}
         </div>
         {err && <div style={{ color:'#b91c1c' }}>{err}</div>}
@@ -102,9 +115,9 @@ export default function AuthPage() {
           <div style={{ fontSize:12, color:'#64748b' }}>{t('SignupEmailHint')}</div>
         )}
       </form>
-      <div style={{ marginTop:10, fontSize:12, color:'#64748b' }}>
+      <div style={{ marginTop:14, fontSize:14, color:'#64748b' }}>
         <span>{mode==='login' ? t('NoAccount') : t('HaveAccount')}</span>
-        <button onClick={()=> setMode(mode==='login'?'signup':'login')} className="vh-btn vh-btn-link">{mode==='login' ? t('SignupTitle') : t('LoginTitle')}</button>
+        <button onClick={()=> setMode(mode==='login'?'signup':'login')} className="vh-btn vh-btn-link" style={{ padding:'0 6px' }}>{mode==='login' ? t('SignupTitle') : t('LoginTitle')}</button>
       </div>
     </div>
   );

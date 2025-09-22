@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import jwt from 'jsonwebtoken';
 import pkg from 'pg';
 
@@ -77,6 +78,7 @@ function verifyFromHeaderOrQuery(req) {
 }
 
 const app = express();
+app.use(compression());
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));

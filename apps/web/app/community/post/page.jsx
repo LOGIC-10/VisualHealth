@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useI18n } from '../../../components/i18n';
+import { API } from '../../../lib/api';
 
-const FEED_BASE = process.env.NEXT_PUBLIC_API_FEED || 'http://localhost:4005';
-const MEDIA_BASE = process.env.NEXT_PUBLIC_API_MEDIA || 'http://localhost:4003';
+const FEED_BASE = API.feed;
+const MEDIA_BASE = API.media;
 
 export default function CreatePostPage() {
   const { t } = useI18n();

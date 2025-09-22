@@ -1,9 +1,11 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '../../../components/i18n';
 import { renderMarkdown } from '../../../components/markdown';
 import { API } from '../../../lib/api';
+import { base64ToBlob, revokeObjectUrl } from '../../../lib/run-local-analysis';
 
 import WaveSurfer from 'wavesurfer.js';
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js';
@@ -17,8 +19,10 @@ const ANALYSIS_BASE = API.analysis;
 const LLM_BASE = API.llm;
 
 export default function AnalysisDetail({ params }) {
+  const router = useRouter();
   const { t, lang } = useI18n();
   const { id } = params;
+  const isGuest = id === 'guest';
   const [token, setToken] = useState(null);
   const [me, setMe] = useState(null);
   const [meta, setMeta] = useState(null);
@@ -40,6 +44,8 @@ export default function AnalysisDetail({ params }) {
   const [specUrl, setSpecUrl] = useState(null);
   const [adv, setAdv] = useState(null);
   const [audioHash, setAudioHash] = useState(null);
+  const guestAssetsRef = useRef({ audio:null, spec:null });
+  const guestHsmmRef = useRef(null);
   const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
   const [progress, setProgress] = useState(0);
   const [audioError, setAudioError] = useState(null);
@@ -75,6 +81,7 @@ export default function AnalysisDetail({ params }) {
   const [navOffset, setNavOffset] = useState(96);
   const contentRef = useRef(null);
   const [contentWidth, setContentWidth] = useState(960);
+  const canUseAccountFeatures = !!token && !isGuest;
   useEffect(() => {
     try {
       const nav = document.querySelector('nav');
@@ -106,9 +113,13 @@ export default function AnalysisDetail({ params }) {
   const assistantAccumRef = useRef('');
   const chatScrollRef = useRef(null);
 
+  useEffect(() => {
+    if (!canUseAccountFeatures) setChatOpen(false);
+  }, [canUseAccountFeatures]);
+
   // Load persisted chat history for this analysis record
   useEffect(() => {
-    if (!token || !id) return;
+    if (!token || !id || isGuest) return;
     (async () => {
       try {
         const r = await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { headers: { Authorization: `Bearer ${token}` } });
@@ -264,6 +275,101 @@ export default function AnalysisDetail({ params }) {
 
   useEffect(() => { try { setToken(localStorage.getItem('vh_token')); } catch {} }, []);
 
+  useEffect(() => {
+    if (!isGuest) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = sessionStorage.getItem('vh_guest_result');
+        if (!raw) {
+          router.replace('/analysis');
+          return;
+        }
+        const data = JSON.parse(raw);
+        if (cancelled || !data) return;
+        const fallbackName = data.name || t('NewAnalysis');
+        const metaBase = {
+          id: 'guest',
+          filename: fallbackName,
+          mimetype: data.type || 'audio/wav',
+          size: data.size || 0,
+          created_at: data.createdAt || new Date().toISOString(),
+          title: fallbackName,
+          adv: data.adv || null,
+          spec_media_id: data.specBase64 ? 'guest' : null
+        };
+        setMeta(metaBase);
+        setTitle(fallbackName);
+        setFeatures(data.features || null);
+        if (data.extra) setExtra(data.extra);
+        if (data.adv) setAdv(data.adv);
+        if (data.quality) setQuality(data.quality);
+        if (typeof data.useHsmm === 'boolean') {
+          setUseHsmm(data.useHsmm);
+          guestHsmmRef.current = data.useHsmm;
+        }
+        if (data.payload) setPcmPayload(data.payload);
+        if (data.durationSec) setDuration(data.durationSec);
+        else if (data.features?.durationSec) setDuration(data.features.durationSec);
+        const audioBlob = data.audioBase64 ? base64ToBlob(data.audioBase64, data.type || 'audio/wav') : null;
+        if (audioBlob) {
+          const url = URL.createObjectURL(audioBlob);
+          guestAssetsRef.current.audio = url;
+          setAudioUrl(url);
+        }
+        if (data.specBase64) {
+          const specBlob = base64ToBlob(data.specBase64, 'image/png');
+          if (specBlob) {
+            const surl = URL.createObjectURL(specBlob);
+            guestAssetsRef.current.spec = surl;
+            setSpecUrl(surl);
+          }
+        }
+        setLoading(s => ({ ...s, decode:false, extra:false, adv:false, spec:false }));
+      } catch (err) {
+        console.warn('guest data restore failed', err);
+        router.replace('/analysis');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (guestAssetsRef.current.audio) {
+        revokeObjectUrl(guestAssetsRef.current.audio);
+        guestAssetsRef.current.audio = null;
+      }
+      if (guestAssetsRef.current.spec) {
+        revokeObjectUrl(guestAssetsRef.current.spec);
+        guestAssetsRef.current.spec = null;
+      }
+    };
+  }, [isGuest, router, t]);
+
+  useEffect(() => {
+    if (!isGuest) return;
+    if (!pcmPayload) return;
+    if (guestHsmmRef.current === useHsmm && adv) return;
+    let cancelled = false;
+    setLoading(s => ({ ...s, adv:true }));
+    (async () => {
+      try {
+        const resp = await fetch(VIZ_BASE + '/pcg_advanced', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ ...pcmPayload, useHsmm })
+        });
+        if (!resp.ok) return;
+        const json = await resp.json();
+        if (!cancelled) setAdv(json);
+      } catch (err) {
+        if (!cancelled) console.warn('guest adv recompute failed', err);
+      } finally {
+        if (!cancelled) setLoading(s => ({ ...s, adv:false }));
+      }
+    })();
+    guestHsmmRef.current = useHsmm;
+    return () => { cancelled = true; };
+  }, [isGuest, useHsmm, pcmPayload]);
+
   // Load current user once and subscribe to profile changes; seed from cache to avoid flicker
   useEffect(() => {
     let tkn = null; try { tkn = localStorage.getItem('vh_token'); } catch {}
@@ -290,7 +396,7 @@ export default function AnalysisDetail({ params }) {
   }, [id, lang]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || isGuest) return;
     (async () => {
       const r = await fetch(ANALYSIS_BASE + `/records/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) return;
@@ -317,11 +423,11 @@ export default function AnalysisDetail({ params }) {
         } catch {}
       }
     })();
-  }, [id, token]);
+  }, [id, token, isGuest]);
 
   // SSE 推送（spec_done/pcg_done）；不可用时采用500ms起步指数退避到3s的短轮询
   useEffect(() => {
-    if (!token || !id) return;
+    if (!token || !id || isGuest) return;
     let es = null; let stopped = false; let backoff = 500;
     const maxBackoff = 3000;
     const poll = async () => {
@@ -363,7 +469,7 @@ export default function AnalysisDetail({ params }) {
       poll();
     }
     return () => { stopped = true; try { es?.close(); } catch {}; };
-  }, [token, id]);
+  }, [token, id, isGuest]);
 
   // SSE已覆盖spec/adv更新；无需额外轮询逻辑
 
@@ -403,7 +509,7 @@ export default function AnalysisDetail({ params }) {
       if (tries >= maxTries) clearInterval(iv);
     }, 3000);
     return () => { cancelled = true; clearInterval(iv); };
-  }, [aiSubmitted, aiText, token, id, lang, meta]);
+  }, [aiSubmitted, aiText, token, id, lang, meta, isGuest]);
 
   // Load audio blob URL only (render handled by WaveSurfer)
   useEffect(() => {
@@ -908,7 +1014,7 @@ export default function AnalysisDetail({ params }) {
 
   // Timeline is rendered by WaveSurfer TimelinePlugin
 
-  if (!token) return (
+  if (!token && !isGuest) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div>{t('LoginToView')}</div>
@@ -933,10 +1039,12 @@ export default function AnalysisDetail({ params }) {
       )}
       <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-        {!editing ? (
+        {!editing || !canUseAccountFeatures ? (
           <>
             <h1 style={{ fontSize: 24, margin: '12px 0' }}>{title || (meta?.filename || '') || t('AnalysisTitle')}</h1>
-            <button onClick={()=>setEditing(true)} title={t('EditTitle')} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✎</button>
+            {canUseAccountFeatures && !editing && (
+              <button onClick={()=>setEditing(true)} title={t('EditTitle')} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✎</button>
+            )}
           </>
         ) : (
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -1289,7 +1397,7 @@ export default function AnalysisDetail({ params }) {
           <span>{t('AIAnalysis')}</span>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          {aiText && (
+          {aiText && canUseAccountFeatures && (
             <button onClick={()=> setChatOpen(true)} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
               {t('StartConversation')}
             </button>
@@ -1298,7 +1406,7 @@ export default function AnalysisDetail({ params }) {
       </div>
       <div className={"vh-collapse "+(openAI?"open":"closed")}>
       <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
-        {!aiText && (
+        {!aiText && canUseAccountFeatures && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
           <button disabled={aiBusy} onClick={async ()=>{
             setAiBusy(true); setAiErr('');
@@ -1338,6 +1446,11 @@ export default function AnalysisDetail({ params }) {
           {aiErr && <span style={{ color:'#b91c1c', fontSize:13 }}>{aiErr}</span>}
         </div>
         )}
+        {!canUseAccountFeatures && (
+          <div style={{ padding:12, border:'1px dashed #cbd5e1', borderRadius:12, background:'#fff', color:'#64748b', fontSize:13 }}>
+            {lang==='zh' ? '登录账户即可生成 AI 报告并与助手对话。' : 'Sign in to generate an AI report and chat with the assistant.'}
+          </div>
+        )}
         {/* AI metrics block removed — AI now uses existing metrics in prompt */}
         {aiText && (
           <>
@@ -1351,7 +1464,7 @@ export default function AnalysisDetail({ params }) {
       </div>
       </div>
       </div>
-      {chatOpen && (
+      {canUseAccountFeatures && chatOpen && (
         <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', marginTop: 12, minWidth:300, maxWidth:420, alignSelf:'start', position:'sticky', top: navOffset, height: `calc(100vh - ${navOffset + 16}px)` }}>
           <div style={{ padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
             <div style={{ fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>

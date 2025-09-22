@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
 import { API } from '../../lib/api';
-const VIZ_BASE = API.viz;
+import { runLocalAnalysis } from '../../lib/run-local-analysis';
 
 export default function AnalyzePage() {
   const router = useRouter();
@@ -22,7 +22,6 @@ export default function AnalyzePage() {
   const [guestErr, setGuestErr] = useState('');
   const [useHsmm, setUseHsmm] = useState(false);
   const [quality, setQuality] = useState(null);
-  const guestRestoreRef = useRef(false);
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
@@ -56,34 +55,11 @@ export default function AnalyzePage() {
     return () => wavesurfer.destroy();
   }, []);
 
-  useEffect(() => {
-    if (!ws) return;
-    let active = true;
-    (async () => {
-      if (guestRestoreRef.current) return;
-      try {
-        const raw = sessionStorage.getItem('vh_guest_upload');
-        if (!raw) return;
-        sessionStorage.removeItem('vh_guest_upload');
-        guestRestoreRef.current = true;
-        const payload = JSON.parse(raw);
-        const binary = atob(payload.data || '');
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const blob = new Blob([bytes.buffer], { type: payload.type || 'audio/wav' });
-        const file = new File([blob], payload.name || 'analysis.wav', { type: payload.type || 'audio/wav' });
-        if (active) await processSelectedFile(file);
-      } catch (err) {
-        console.warn('guest upload restore failed', err);
-      } finally {
-        guestRestoreRef.current = false;
-      }
-    })();
-    return () => { active = false; };
-  }, [ws]);
 
   async function processSelectedFile(file) {
     if (!file || !ws) return;
+    setNavigating(true);
+    setGuestErr('');
     setFileObj(file);
     // Guest limit: at most 3 cases per session (tab)
     if (!token) {
@@ -92,98 +68,104 @@ export default function AnalyzePage() {
         if (n >= 3) {
           setGuestErr('游客最多创建 3 个分析。请登录保存更多。');
           setGuestNoticeOpen(true);
+          setNavigating(false);
           return;
         }
         sessionStorage.setItem('vh_guest_case_count', String(n+1));
       } catch {}
     }
-    if (token) setNavigating(true);
-    const arrayBuffer = await file.arrayBuffer();
     ws.loadBlob(file);
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const audioBuf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-    const channel = audioBuf.getChannelData(0);
-    const targetSR = 8000;
-    const ratio = Math.max(1, Math.floor(audioBuf.sampleRate / targetSR));
-    const ds = new Float32Array(Math.ceil(channel.length / ratio));
-    for (let i = 0; i < ds.length; i++) ds[i] = channel[i * ratio] || 0;
-    const resp = await fetch(API.analysis + '/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) })
-    });
-    const json = await resp.json();
-    setFeatures(json);
-
-    // If logged in, persist upload + record automatically
-    setSavedId(null);
-
-    // 1) Quality gate (do not run analysis if not PCG or low quality)
     try {
-      const q = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) }) });
-      const qj = await q.json();
-      setQuality(qj);
-      if (!qj.isHeart || !qj.qualityOk) {
-        setNavigating(false);
-        setGuestNoticeOpen(true);
+      const result = await runLocalAnalysis(file, { useHsmm });
+      setFeatures(result.features);
+      setQuality(result.quality || null);
+      setSavedId(null);
+
+      if (!result.ok) {
+        if (!token) setGuestNoticeOpen(true);
         setGuestErr('检测到音频不是心音或质量不达标，请重新录制靠近胸前、环境安静下的心音。');
         return;
       }
-    } catch {}
-    if (token) {
+
+      if (token) {
         try {
           setSaving(true);
           const fd = new FormData();
           fd.append('file', file);
-        const up = await fetch(API.media + '/upload', {
-          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd
-        });
-        const meta = await up.json();
-        if (!meta?.id) throw new Error('upload failed');
-        const rec = await fetch(API.analysis + '/records', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: json })
-        });
-        const saved = await rec.json();
+          const up = await fetch(API.media + '/upload', {
+            method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd
+          });
+          const meta = await up.json();
+          if (!meta?.id) throw new Error('upload failed');
+          const rec = await fetch(API.analysis + '/records', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features: result.features })
+          });
+          const saved = await rec.json();
 
-        // Precompute advanced & spectrogram and patch record (cache)
-        // Do this BEFORE navigating, so users see results on first load even if they don't open detail immediately.
-        try {
-          const payload = { sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) };
-          const [advResp, specResp] = await Promise.all([
-            fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
-            fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
-          ]);
-          let specId = null; let adv = null;
-          if (specResp.ok) {
-            const imgBlob = await specResp.blob();
-            const fdu = new FormData();
-            fdu.append('file', new File([imgBlob], 'spectrogram.png', { type:'image/png' }));
-            const up2 = await fetch(API.media + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
-            const j2 = await up2.json();
-            if (j2?.id) specId = j2.id;
+          try {
+            let specId = null;
+            if (result.specBlob) {
+              const fdu = new FormData();
+              fdu.append('file', new File([result.specBlob], 'spectrogram.png', { type:'image/png' }));
+              const up2 = await fetch(API.media + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
+              const j2 = await up2.json();
+              if (j2?.id) specId = j2.id;
+            }
+            if (saved?.id && (result.adv || specId)) {
+              await fetch(API.analysis + `/records/${saved.id}`, {
+                method:'PATCH',
+                headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                body: JSON.stringify({ adv: result.adv || null, specMediaId: specId || null })
+              });
+            }
+          } catch (err) {
+            console.warn('persist patch failed', err);
           }
-          if (advResp.ok) adv = await advResp.json();
-          if (saved?.id && (adv || specId)) {
-            await fetch(API.analysis + `/records/${saved.id}`, {
-              method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: adv || null, specMediaId: specId || null })
-            });
+
+          if (saved?.id) {
+            setSavedId(saved.id);
+            router.replace(`/analysis/${saved.id}`);
+            return;
           }
-        } catch {}
-        if (saved?.id) {
-          setSavedId(saved.id);
-          router.replace(`/analysis/${saved.id}`);
-          return; // stop further UI updates on this page
-        }
         } catch (err) {
           console.warn('persist failed', err);
         } finally {
           setSaving(false);
         }
       } else {
-        // Visitor path: show sticky notice to save by login
-        setGuestNoticeOpen(true);
+        try {
+          const guestData = {
+            name: file.name,
+            type: file.type || 'audio/wav',
+            size: file.size,
+            createdAt: new Date().toISOString(),
+            features: result.features,
+            extra: result.extra || null,
+            adv: result.adv || null,
+            specBase64: result.specBase64 || null,
+            quality: result.quality || null,
+            payload: result.payload,
+            useHsmm,
+            durationSec: result.durationSec || null,
+            audioBase64: result.audioBase64
+          };
+          sessionStorage.setItem('vh_guest_result', JSON.stringify(guestData));
+          router.replace('/analysis/guest');
+          return;
+        } catch (err) {
+          console.warn('guest stash failed', err);
+          setGuestNoticeOpen(true);
+          setGuestErr('浏览器暂存失败，请尝试更换浏览器或登录后再试。');
+        }
       }
+    } catch (err) {
+      console.warn('local analysis failed', err);
+      setGuestErr('分析失败，请重试或更换浏览器。');
+      if (!token) setGuestNoticeOpen(true);
+    } finally {
+      setNavigating(false);
+    }
   }
 
   async function handleFile(e) {

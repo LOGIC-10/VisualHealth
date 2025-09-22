@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
 import { API } from '../../lib/api';
+import { runLocalAnalysis } from '../../lib/run-local-analysis';
 
 const ANALYSIS_BASE = API.analysis;
 const MEDIA_BASE = API.media;
@@ -37,6 +38,7 @@ export default function AnalysisListPage() {
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' or 'asc'
   const [useHsmm, setUseHsmm] = useState(false);
   const [guestUploadErr, setGuestUploadErr] = useState('');
+  const [guestProcessing, setGuestProcessing] = useState(false);
 
   useEffect(() => {
     try {
@@ -228,21 +230,40 @@ export default function AnalysisListPage() {
   async function onGuestFile(e){
     const file = e.target.files?.[0];
     if (!file) return;
+    setGuestProcessing(true);
     try {
       setGuestUploadErr('');
-      const ab = await file.arrayBuffer();
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
-      sessionStorage.setItem('vh_guest_upload', JSON.stringify({
+      const result = await runLocalAnalysis(file, { useHsmm });
+      if (!result.ok) {
+        if (result.reason === 'quality') {
+          setGuestUploadErr('检测到音频不是心音或质量不达标，请重新录制靠近胸前、环境安静下的心音。');
+        } else {
+          setGuestUploadErr('分析失败，请重试或更换浏览器。');
+        }
+        return;
+      }
+      const guestData = {
         name: file.name,
         type: file.type || 'audio/wav',
         size: file.size,
-        data: b64
-      }));
-      router.push('/analyze');
+        createdAt: new Date().toISOString(),
+        features: result.features,
+        extra: result.extra || null,
+        adv: result.adv || null,
+        specBase64: result.specBase64 || null,
+        quality: result.quality || null,
+        payload: result.payload,
+        useHsmm,
+        durationSec: result.durationSec || null,
+        audioBase64: result.audioBase64
+      };
+      sessionStorage.setItem('vh_guest_result', JSON.stringify(guestData));
+      router.replace('/analysis/guest');
     } catch (err) {
       setGuestUploadErr('暂存失败，请重试或更换浏览器。');
     } finally {
       if (guestFileInputRef.current) guestFileInputRef.current.value = '';
+      setGuestProcessing(false);
     }
   }
 
@@ -351,11 +372,25 @@ export default function AnalysisListPage() {
             <button onClick={pickGuestFile} className="vh-btn vh-btn-outline vh-btn-lg">立即体验（不保存）</button>
             <Link href="/auth" className="vh-btn vh-btn-primary vh-btn-lg" style={{ textDecoration:'none' }}>登录 / 注册并保存</Link>
           </div>
+          {guestProcessing && (
+            <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:8, color:'#475569' }}>
+              <div style={{ width:20, height:20, border:'3px solid #cbd5e1', borderTopColor:'#2563eb', borderRadius:'9999px', animation:'vh-rot 0.8s linear infinite' }} />
+              <div>正在为你准备完整分析…</div>
+              <style>{`@keyframes vh-rot{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          )}
           {guestUploadErr && <div style={{ marginTop:10, color:'#b91c1c' }}>{guestUploadErr}</div>}
           <div style={{ marginTop:12, color:'#64748b', fontSize:13 }}>
             小提示：支持 WAV/MP3/M4A 等常见音频；上传后会即时生成频谱图与临床级 PCG 指标。
           </div>
         </div>
+        <input
+          ref={guestFileInputRef}
+          type="file"
+          accept="audio/*"
+          style={{ display:'none' }}
+          onChange={onGuestFile}
+        />
       </div>
     );
   }
@@ -433,13 +468,6 @@ export default function AnalysisListPage() {
           <div>Preparing results {healing.done} / {healing.total} …</div>
         </div>
       )}
-      <input
-        ref={guestFileInputRef}
-        type="file"
-        accept="audio/*"
-        style={{ display:'none' }}
-        onChange={onGuestFile}
-      />
       {loading && (
         <div style={{ display:'flex', alignItems:'center', gap:8, color:'#64748b' }}>
           <div className="vh-spin" />

@@ -13,6 +13,7 @@ export default function AnalyzePage() {
   const [ws, setWs] = useState(null);
   const [features, setFeatures] = useState(null);
   const [fileObj, setFileObj] = useState(null);
+  const fileInputRef = useRef(null);
   const [token, setToken] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState(null);
@@ -21,6 +22,7 @@ export default function AnalyzePage() {
   const [guestErr, setGuestErr] = useState('');
   const [useHsmm, setUseHsmm] = useState(false);
   const [quality, setQuality] = useState(null);
+  const guestRestoreRef = useRef(false);
 
   useEffect(() => {
     const t = localStorage.getItem('vh_token');
@@ -54,8 +56,33 @@ export default function AnalyzePage() {
     return () => wavesurfer.destroy();
   }, []);
 
-  async function handleFile(e) {
-    const file = e.target.files?.[0];
+  useEffect(() => {
+    if (!ws) return;
+    let active = true;
+    (async () => {
+      if (guestRestoreRef.current) return;
+      try {
+        const raw = sessionStorage.getItem('vh_guest_upload');
+        if (!raw) return;
+        sessionStorage.removeItem('vh_guest_upload');
+        guestRestoreRef.current = true;
+        const payload = JSON.parse(raw);
+        const binary = atob(payload.data || '');
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes.buffer], { type: payload.type || 'audio/wav' });
+        const file = new File([blob], payload.name || 'analysis.wav', { type: payload.type || 'audio/wav' });
+        if (active) await processSelectedFile(file);
+      } catch (err) {
+        console.warn('guest upload restore failed', err);
+      } finally {
+        guestRestoreRef.current = false;
+      }
+    })();
+    return () => { active = false; };
+  }, [ws]);
+
+  async function processSelectedFile(file) {
     if (!file || !ws) return;
     setFileObj(file);
     // Guest limit: at most 3 cases per session (tab)
@@ -159,13 +186,20 @@ export default function AnalyzePage() {
       }
   }
 
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processSelectedFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
   // Upload removed per design (no encrypted saving)
 
   return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
       <h1 style={{ fontSize: 28, marginBottom: 12 }}>{t('NewAnalysis')}</h1>
       <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-        <input type="file" accept="audio/*" onChange={handleFile} />
+        <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleFile} />
         <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:14 }}>
           <input type="checkbox" checked={useHsmm} onChange={e=>{ setUseHsmm(e.target.checked); try { localStorage.setItem('vh_use_hsmm', e.target.checked ? '1' : '0'); } catch {} }} />
           使用 HSMM 分割（实验特性）

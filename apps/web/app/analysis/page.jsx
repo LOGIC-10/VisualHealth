@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
 import { API } from '../../lib/api';
 
@@ -10,6 +11,7 @@ const VIZ_BASE = API.viz;
 
 export default function AnalysisListPage() {
   const { t } = useI18n();
+  const router = useRouter();
   // Avoid SSR/CSR mismatch: init as null and set after mount
   const [token, setToken] = useState(null);
   useEffect(() => {
@@ -25,6 +27,7 @@ export default function AnalysisListPage() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ total: 0, done: 0 });
   const fileInputRef = useRef(null);
+  const guestFileInputRef = useRef(null);
   const [healing, setHealing] = useState({ running: false, total: 0, done: 0 });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterName, setFilterName] = useState('');
@@ -33,6 +36,7 @@ export default function AnalysisListPage() {
   const [dateEnd, setDateEnd] = useState('');
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' or 'asc'
   const [useHsmm, setUseHsmm] = useState(false);
+  const [guestUploadErr, setGuestUploadErr] = useState('');
 
   useEffect(() => {
     try {
@@ -219,6 +223,28 @@ export default function AnalysisListPage() {
   }, [files, filterName, filterType, dateStart, dateEnd, sortOrder]);
 
   function pickFiles(){ fileInputRef.current?.click(); }
+  function pickGuestFile(){ guestFileInputRef.current?.click(); }
+
+  async function onGuestFile(e){
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setGuestUploadErr('');
+      const ab = await file.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+      sessionStorage.setItem('vh_guest_upload', JSON.stringify({
+        name: file.name,
+        type: file.type || 'audio/wav',
+        size: file.size,
+        data: b64
+      }));
+      router.push('/analyze');
+    } catch (err) {
+      setGuestUploadErr('暂存失败，请重试或更换浏览器。');
+    } finally {
+      if (guestFileInputRef.current) guestFileInputRef.current.value = '';
+    }
+  }
 
   async function onDelete(id){
     if (!token) { window.location.href = '/auth'; return; }
@@ -322,9 +348,10 @@ export default function AnalysisListPage() {
             你可以先以游客身份体验分析功能（不保存记录），或登录后保存并管理历史记录。
           </div>
           <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
-            <Link href="/analyze" className="vh-btn vh-btn-outline vh-btn-lg" style={{ textDecoration:'none' }}>立即体验（不保存）</Link>
+            <button onClick={pickGuestFile} className="vh-btn vh-btn-outline vh-btn-lg">立即体验（不保存）</button>
             <Link href="/auth" className="vh-btn vh-btn-primary vh-btn-lg" style={{ textDecoration:'none' }}>登录 / 注册并保存</Link>
           </div>
+          {guestUploadErr && <div style={{ marginTop:10, color:'#b91c1c' }}>{guestUploadErr}</div>}
           <div style={{ marginTop:12, color:'#64748b', fontSize:13 }}>
             小提示：支持 WAV/MP3/M4A 等常见音频；上传后会即时生成频谱图与临床级 PCG 指标。
           </div>
@@ -406,6 +433,13 @@ export default function AnalysisListPage() {
           <div>Preparing results {healing.done} / {healing.total} …</div>
         </div>
       )}
+      <input
+        ref={guestFileInputRef}
+        type="file"
+        accept="audio/*"
+        style={{ display:'none' }}
+        onChange={onGuestFile}
+      />
       {loading && (
         <div style={{ display:'flex', alignItems:'center', gap:8, color:'#64748b' }}>
           <div className="vh-spin" />

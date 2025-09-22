@@ -311,8 +311,10 @@ export default function AnalysisDetail({ params }) {
         if (data.payload) setPcmPayload(data.payload);
         if (data.durationSec) setDuration(data.durationSec);
         else if (data.features?.durationSec) setDuration(data.features.durationSec);
-        const audioBlob = data.audioBase64 ? base64ToBlob(data.audioBase64, data.type || 'audio/wav') : null;
-        if (audioBlob) {
+        const audioBlob = data.audioBase64 ? base64ToBlob(data.audioBase64, data.mime || data.type || 'audio/wav') : null;
+        if (data.audioDataUrl) {
+          setAudioUrl(data.audioDataUrl);
+        } else if (audioBlob) {
           const url = URL.createObjectURL(audioBlob);
           guestAssetsRef.current.audio = url;
           setAudioUrl(url);
@@ -1016,7 +1018,7 @@ export default function AnalysisDetail({ params }) {
 
   if (!token && !isGuest) return (
     <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
-      <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
+      <button type="button" onClick={()=>router.push('/analysis')} style={{ background:'none', border:'none', padding:0, color:'#2563eb', cursor:'pointer' }}>{t('Back')}</button>
       <div>{t('LoginToView')}</div>
     </div>
   );
@@ -1037,7 +1039,7 @@ export default function AnalysisDetail({ params }) {
           本音频疑似非心音或质量不足，已跳过心音分析。建议在安静环境靠近胸前重新录制（≥6秒）。
         </div>
       )}
-      <Link href="/analysis" style={{ textDecoration:'none', color:'#2563eb' }}>{t('Back')}</Link>
+      <button type="button" onClick={()=>router.push('/analysis')} style={{ background:'none', border:'none', padding:0, color:'#2563eb', cursor:'pointer', fontSize:14 }}>{t('Back')}</button>
       <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
         {!editing || !canUseAccountFeatures ? (
           <>
@@ -1153,7 +1155,7 @@ export default function AnalysisDetail({ params }) {
       )}
 
       {audioUrl && (
-        <audio ref={audioRef} controls src={audioUrl} style={{ marginTop: 8, width:'100%' }} />
+        <audio key={audioUrl} ref={audioRef} controls src={audioUrl} preload="auto" style={{ marginTop: 8, width:'100%' }} />
       )}
 
       {/* Sub-title: Spectrogram */}

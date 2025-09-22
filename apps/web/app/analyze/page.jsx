@@ -148,7 +148,9 @@ export default function AnalyzePage() {
             payload: result.payload,
             useHsmm,
             durationSec: result.durationSec || null,
-            audioBase64: result.audioBase64
+            audioBase64: result.audioBase64,
+            audioDataUrl: result.audioDataUrl || null,
+            mime: result.mime || (file.type || 'audio/wav')
           };
           sessionStorage.setItem('vh_guest_result', JSON.stringify(guestData));
           router.replace('/analysis/guest');

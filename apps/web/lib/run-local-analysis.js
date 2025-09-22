@@ -120,6 +120,8 @@ export async function runLocalAnalysis(file, { useHsmm = false } = {}) {
     try { extra = await extraResp.json(); } catch {}
   }
 
+  const mime = file.type || 'audio/wav';
+  const audioBase64 = arrayBufferToBase64(arrayBuffer);
   return {
     ok: true,
     features,
@@ -129,9 +131,11 @@ export async function runLocalAnalysis(file, { useHsmm = false } = {}) {
     payload,
     specBlob,
     specBase64,
-    arrayBuffer,
     durationSec: audioBuf.duration,
-    audioBase64: arrayBufferToBase64(arrayBuffer)
+    audioBase64,
+    audioDataUrl: `data:${mime};base64,${audioBase64}`,
+    mime,
+    arrayBuffer
   };
 }
 

@@ -13,7 +13,12 @@ export default function AnalysisListPage() {
   // Avoid SSR/CSR mismatch: init as null and set after mount
   const [token, setToken] = useState(null);
   useEffect(() => {
-    try { setToken(localStorage.getItem('vh_token')); } catch { setToken(''); }
+    try {
+      const raw = localStorage.getItem('vh_token');
+      setToken(raw ? raw : '');
+    } catch {
+      setToken('');
+    }
   }, []);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +42,7 @@ export default function AnalysisListPage() {
   }, []);
 
   useEffect(() => {
-    if (token === null) { setLoading(false); return; }
+    if (token === null) return;
     if (!token) { setLoading(false); return; }
     (async () => {
       try {

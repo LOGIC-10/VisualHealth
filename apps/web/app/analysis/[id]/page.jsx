@@ -185,105 +185,147 @@ export default function AnalysisDetail({ params }) {
     // Persist user message immediately (best-effort)
     try { await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'user', content: userText }) }); } catch {}
     setChatMsgs(cur => cur.concat([{ role:'user', content:userText }, { role:'assistant', content:'' }]));
-    // Setup abort controller and accum buffer for streaming
     assistantAccumRef.current = '';
-    chatAbortRef.current = new AbortController();
-    try {
-      // Try streaming first (user explicitly wants real-time output)
-      const resp = await fetch(LLM_BASE + '/chat_sse', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Accept':'text/event-stream' },
-        body: JSON.stringify({ messages, temperature: 0.2 }),
-        signal: chatAbortRef.current.signal
-      });
-      if (!resp.ok || !resp.body) {
-        // Fallback to non-streaming endpoint
-        const resp2 = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }), signal: chatAbortRef.current.signal });
-        const j2 = await resp2.json().catch(()=>({}));
-        if (!resp2.ok || j2?.error) throw new Error(j2?.error || 'chat failed');
-        const text = j2?.text || '';
-        setChatMsgs(cur => { const c = cur.slice(); const last=c[c.length-1]; if (last && last.role==='assistant') last.content = text; return c; });
-        // Persist assistant reply
-        try { if (text && text.trim()) await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: text }) }); } catch {}
-        return;
-      }
-      const reader = resp.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
-      let assistantAccum = '';
-      const flushBuffer = () => {
-        let idx;
-        while ((idx = buffer.indexOf('\n\n')) >= 0) {
-          const chunk = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 2);
-          if (!chunk) continue;
-          const line = chunk.split('\n').find(l => l.startsWith('data:')) || chunk;
-          const payload = line.replace(/^data:\s*/, '');
-          try {
-            const evt = JSON.parse(payload);
-            if (evt?.delta) {
-              const piece = String(evt.delta);
-              setChatMsgs(cur => {
-                const c = cur.slice();
-                const last = c[c.length - 1];
-                if (last && last.role === 'assistant') {
-                  const prev = last.content || '';
-                  let k = Math.min(prev.length, piece.length);
-                  while (k > 0 && !prev.endsWith(piece.slice(0, k))) k--;
-                  const toAppend = piece.slice(k);
-                  if (toAppend) {
-                    assistantAccum += toAppend;
-                    assistantAccumRef.current += toAppend;
-                    last.content = prev + toAppend;
-                  }
-                }
-                return c;
-              });
-            }
-            if (evt?.error) throw new Error(evt.error);
-          } catch {}
-        }
-      };
-      while (true) {
-        const { value, done } = await reader.read();
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-          if (buffer.includes('\r')) buffer = buffer.replace(/\r/g, '\n');
-          flushBuffer();
-        }
-        if (done) break;
-      }
-      if (buffer.trim()) {
-        buffer += '\n\n';
-        flushBuffer();
-      }
-      // persist streamed reply
-      try { if (assistantAccum && assistantAccum.trim()) await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: assistantAccum }) }); } catch {}
-    } catch(e){
-      const isAbort = e?.name === 'AbortError' || /aborted|AbortError/i.test(e?.message || '');
-      if (isAbort) {
-        // On cancel: persist any partial text; if none, remove empty assistant bubble
-        try {
-          const partial = assistantAccumRef.current || '';
-          if (partial.trim()) {
-            await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: partial }) });
-          } else {
-            setChatMsgs(cur => {
-              const c = cur.slice();
-              const last = c[c.length-1];
-              if (last && last.role==='assistant' && !last.content) c.pop();
-              return c;
-            });
-          }
-        } catch {}
-      } else {
-        const msg = e?.message || 'chat failed';
-        setChatErr(msg);
-        // Fill last assistant bubble with error text if empty
-        setChatMsgs(cur => {
-          const c = cur.slice();
-          const last = c[c.length-1];
-          if (last && last.role==='assistant' && !last.content) last.content = msg;
-          return c;
+    let assistantAccum = '';
+    let aborted = false;
+
+    const persistAssistant = async (text) => {
+      if (!text || !text.trim()) return;
+      try {
+        await fetch(ANALYSIS_BASE + `/records/${id}/chat`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ role:'assistant', content: text })
         });
+      } catch {}
+    };
+
+    const appendDelta = (piece) => {
+      if (!piece) return;
+      setChatMsgs(cur => {
+        const c = cur.slice();
+        const last = c[c.length - 1];
+        if (last && last.role === 'assistant') {
+          const prev = last.content || '';
+          let k = Math.min(prev.length, piece.length);
+          while (k > 0 && !prev.endsWith(piece.slice(0, k))) k--;
+          const toAppend = piece.slice(k);
+          if (toAppend) {
+            assistantAccum += toAppend;
+            assistantAccumRef.current += toAppend;
+            last.content = prev + toAppend;
+          }
+        }
+        return c;
+      });
+    };
+
+    const startStream = () => new Promise((resolve, reject) => {
+      fetch('/api/llm/chat_stream', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ messages, temperature: 0.2 })
+      }).then(async (init) => {
+        if (!init.ok) {
+          const errText = await init.text().catch(() => '');
+          reject(new Error(errText || 'stream init failed'));
+          return;
+        }
+        const { id: streamId } = await init.json().catch(() => ({}));
+        if (!streamId) {
+          reject(new Error('stream init failed'));
+          return;
+        }
+        const es = new EventSource(`/api/llm/chat_stream?id=${encodeURIComponent(streamId)}`);
+        const cleanup = () => {
+          es.close();
+          chatAbortRef.current = null;
+        };
+        chatAbortRef.current = {
+          abort: () => {
+            aborted = true;
+            cleanup();
+            reject(new DOMException('aborted', 'AbortError'));
+          }
+        };
+        es.onmessage = (evt) => {
+          if (!evt.data) return;
+          let payload;
+          try { payload = JSON.parse(evt.data); } catch { return; }
+          if (payload.delta) appendDelta(String(payload.delta));
+          if (payload.error) {
+            cleanup();
+            reject(new Error(payload.error));
+            return;
+          }
+          if (payload.done || payload.finish_reason) {
+            cleanup();
+            resolve('done');
+          }
+        };
+        es.onerror = () => {
+          if (aborted) return;
+          cleanup();
+          reject(new Error('stream error'));
+        };
+      }).catch(reject);
+    });
+
+    const runFallback = async () => {
+      const controller = new AbortController();
+      chatAbortRef.current = { abort: () => { aborted = true; controller.abort(); } };
+      const resp = await fetch(LLM_BASE + '/chat', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ messages, temperature: 0.2 }),
+        signal: controller.signal
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || json?.error) throw new Error(json?.error || 'chat failed');
+      const text = json?.text || '';
+      assistantAccum = text;
+      assistantAccumRef.current = text;
+      setChatMsgs(cur => {
+        const c = cur.slice();
+        const last = c[c.length - 1];
+        if (last && last.role === 'assistant') last.content = text;
+        return c;
+      });
+      await persistAssistant(text);
+    };
+
+    try {
+      await startStream();
+      await persistAssistant(assistantAccum);
+    } catch (e) {
+      const isAbort = aborted || e?.name === 'AbortError' || /aborted|AbortError/i.test(e?.message || '');
+      if (isAbort) {
+        const partial = assistantAccumRef.current || '';
+        if (partial.trim()) {
+          await persistAssistant(partial);
+        } else {
+          setChatMsgs(cur => {
+            const c = cur.slice();
+            const last = c[c.length-1];
+            if (last && last.role==='assistant' && !last.content) c.pop();
+            return c;
+          });
+        }
+      } else {
+        try {
+          await runFallback();
+        } catch (err2) {
+          const msg = err2?.message || e?.message || 'chat failed';
+          setChatErr(msg);
+          setChatMsgs(cur => {
+            const c = cur.slice();
+            const last = c[c.length-1];
+            if (last && last.role==='assistant') {
+              last.content = last.content || msg;
+            }
+            return c;
+          });
+        }
       }
     } finally {
       setChatBusy(false);
@@ -700,12 +742,11 @@ export default function AnalysisDetail({ params }) {
           // Prefer media-based endpoint to avoid large JSON
           let resp = null;
           try {
-            const mediaId = meta?.media_id ? String(meta.media_id) : null;
-            if (mediaId) {
+            if (meta?.media_id) {
               // Quality gate for media; fallback to PCM when media decode unsupported
               let pass = true;
               try {
-                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId }) });
+                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id }) });
                 if (qr.ok) {
                   const qj = await qr.json();
                   setQuality(qj);
@@ -723,7 +764,7 @@ export default function AnalysisDetail({ params }) {
                 } catch { pass = false; }
               }
               if (!pass) { setLoading(s=>({ ...s, adv:false })); return; }
-              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId, hash: audioHash, useHsmm }) });
+              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
             }
           } catch {}
           if (!resp || !resp.ok) {

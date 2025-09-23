@@ -120,31 +120,28 @@ export default function AnalysisListPage() {
         const running = new Set(); let idx = 0;
         const worker = async (item) => {
           try {
-            // Prefer signed URL to fetch the audio without Authorization header
-            const mediaId = item.media_id ? String(item.media_id) : null;
-            let arr = null;
-            try {
-              if (mediaId) {
-                const surl = await fetch(MEDIA_BASE + `/file_url/${mediaId}`, { headers: { Authorization: `Bearer ${token}` } });
-                if (surl.ok) {
-                  const j = await surl.json();
-                  if (j?.url) {
-                    const mediaUrl = toSameOriginMediaUrl(j.url, MEDIA_BASE);
-                    const fr = await fetch(mediaUrl);
-                    if (fr.ok) {
-                      const blob = await fr.blob();
-                      arr = await blob.arrayBuffer();
-                    }
-                  }
-                }
+        // Prefer signed URL to fetch the audio without Authorization header
+        let arr = null;
+        try {
+          const surl = await fetch(MEDIA_BASE + `/file_url/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+          if (surl.ok) {
+            const j = await surl.json();
+            if (j?.url) {
+              const mediaUrl = toSameOriginMediaUrl(j.url, MEDIA_BASE);
+              const fr = await fetch(mediaUrl);
+              if (fr.ok) {
+                const blob = await fr.blob();
+                arr = await blob.arrayBuffer();
               }
-            } catch {}
-            if (!arr) {
-              const r = mediaId ? await fetch(MEDIA_BASE + `/file/${mediaId}`, { headers: { Authorization: `Bearer ${token}` } }) : null;
-              if (!r || !r.ok) return;
-              const blob = await r.blob(); arr = await blob.arrayBuffer();
             }
-            const dec = await decodeDownsample(arr); if (!dec) return;
+          }
+        } catch {}
+        if (!arr) {
+          const r = await fetch(MEDIA_BASE + `/file/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+          if (!r.ok) return;
+          const blob = await r.blob(); arr = await blob.arrayBuffer();
+        }
+        const dec = await decodeDownsample(arr); if (!dec) return;
             const { payload } = dec;
             // Quality gate before computing ADV
             let passQuality = true;

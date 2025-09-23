@@ -16,6 +16,8 @@ export default function PostDetail({ params }) {
   const [content, setContent] = useState('');
   const [files, setFiles] = useState([]);
   const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const scrollerRef = useRef(null);
   const fileInputRef = useRef(null);
   const [dragIndex, setDragIndex] = useState(null);
@@ -33,19 +35,70 @@ export default function PostDetail({ params }) {
   const [replying, setReplying] = useState(false);
   const [replyFiles, setReplyFiles] = useState([]);
 
-  async function load(withToken) {
-    const hdr = withToken ? { Authorization: `Bearer ${withToken}` } : undefined;
-    const [p, c] = await Promise.all([
-      fetch(FEED_BASE + `/posts/${id}`, { headers: hdr }).then(r => r.json()),
-      fetch(FEED_BASE + `/posts/${id}/comments`, { headers: hdr }).then(r => r.json()),
-    ]);
-    setPost(p);
-    setComments(c);
+  async function load(withToken, isCancelled) {
+    setLoading(true);
+    setLoadErr('');
+    try {
+      const headers = withToken ? { Authorization: `Bearer ${withToken}` } : undefined;
+      const postResp = await fetch(FEED_BASE + `/posts/${id}`, { headers });
+      if (postResp.status === 404) {
+        if (!isCancelled?.()) {
+          setPost(null);
+          setComments([]);
+          setLoadErr(lang === 'zh' ? '帖子不存在或已删除。' : 'This post is no longer available.');
+        }
+        return;
+      }
+      if (!postResp.ok) {
+        const text = await postResp.text().catch(() => '');
+        throw new Error(`post load failed: ${postResp.status} ${postResp.statusText} ${text}`.trim());
+      }
+      const postData = await postResp.json().catch(() => null);
+      if (postData?.error) {
+        throw new Error(typeof postData.error === 'string' ? postData.error : 'unable to load post');
+      }
+
+      let commentsData = [];
+      try {
+        const commentsResp = await fetch(FEED_BASE + `/posts/${id}/comments`, { headers });
+        if (commentsResp.ok) {
+          const parsed = await commentsResp.json().catch(() => []);
+          commentsData = Array.isArray(parsed) ? parsed : [];
+        } else if (commentsResp.status !== 404) {
+          const txt = await commentsResp.text().catch(() => '');
+          console.warn('community comments load non-ok', commentsResp.status, txt);
+        }
+      } catch (err) {
+        console.warn('community comments load failed', err);
+      }
+
+      if (isCancelled?.()) return;
+      setPost(postData || null);
+      setComments(commentsData);
+    } catch (err) {
+      if (isCancelled?.()) return;
+      console.warn('community post load failed', err);
+      setPost(null);
+      setComments([]);
+      setLoadErr(lang === 'zh' ? '加载帖子内容失败，请稍后再试。' : 'Unable to load this post right now.');
+    } finally {
+      if (!isCancelled?.()) setLoading(false);
+    }
   }
 
   useEffect(() => {
-    const t = localStorage.getItem('vh_token'); setToken(t);
-    if (t) fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${t}` } }).then(r=>r.json()).then(u=>{ if(!u?.error) setMe(u); }).catch(()=>{});
+    let stored = null;
+    try { stored = localStorage.getItem('vh_token'); } catch {}
+    const normalized = stored || '';
+    setToken(normalized);
+    if (normalized) {
+      fetch(AUTH_BASE + '/me', { headers: { Authorization: `Bearer ${normalized}` } })
+        .then(r => r.ok ? r.json() : Promise.reject(r))
+        .then(u => { if (u && !u.error) setMe(u); })
+        .catch(() => {});
+    } else {
+      setMe(null);
+    }
   }, [id]);
 
   // Update UI authors immediately when profile changes (without refetch)
@@ -61,8 +114,11 @@ export default function PostDetail({ params }) {
 
   useEffect(() => {
     // Load post when token state resolved
-    if (token !== null) load(token || undefined);
-  }, [id, token]);
+    if (token === null) return;
+    let cancelled = false;
+    load(token || undefined, () => cancelled);
+    return () => { cancelled = true; };
+  }, [id, token, lang]);
 
   function onPick(e) {
     const selected = Array.from(e.target.files || []);
@@ -153,7 +209,25 @@ export default function PostDetail({ params }) {
     if (r.status === 204) window.location.href = '/community';
   }
 
-  if (!post) return <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>{t('Loading')}</div>;
+  if (loading) {
+    return <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>{t('Loading')}</div>;
+  }
+  if (loadErr) {
+    return (
+      <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
+        <Link href="/community" style={{ textDecoration: 'none', color: '#2563eb', display:'inline-block', marginBottom:12 }}>{t('Back')}</Link>
+        <div style={{ padding:16, borderRadius:12, border:'1px solid #fecaca', background:'#fef2f2', color:'#b91c1c' }}>{loadErr}</div>
+      </div>
+    );
+  }
+  if (!post) {
+    return (
+      <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
+        <Link href="/community" style={{ textDecoration: 'none', color: '#2563eb', display:'inline-block', marginBottom:12 }}>{t('Back')}</Link>
+        <div style={{ color:'#94a3b8' }}>{lang === 'zh' ? '帖子不存在或已删除。' : 'This post could not be found.'}</div>
+      </div>
+    );
+  }
 
   // Build nested comment tree
   function buildTree(list){

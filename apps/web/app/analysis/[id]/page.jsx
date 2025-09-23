@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useI18n } from '../../../components/i18n';
 import { renderMarkdown } from '../../../components/markdown';
 import { API } from '../../../lib/api';
-import { base64ToBlob, revokeObjectUrl } from '../../../lib/run-local-analysis';
+import { base64ToBlob, base64ToFloat32Array, revokeObjectUrl } from '../../../lib/run-local-analysis';
+import { consumeGuestTransfer } from '../../../lib/guest-transfer';
 
 import WaveSurfer from 'wavesurfer.js';
 import TimelinePlugin from 'wavesurfer.js/dist/plugins/timeline.esm.js';
@@ -21,6 +22,7 @@ const LLM_BASE = API.llm;
 export default function AnalysisDetail({ params }) {
   const router = useRouter();
   const { t, lang } = useI18n();
+  const newAnalysisLabel = useMemo(() => t('NewAnalysis'), [lang]);
   const { id } = params;
   const isGuest = id === 'guest';
   const [token, setToken] = useState(null);
@@ -31,6 +33,7 @@ export default function AnalysisDetail({ params }) {
   const [duration, setDuration] = useState(0);
   const [extra, setExtra] = useState(null);
   const [pxPerSec, setPxPerSec] = useState(80);
+  const pxPerSecRef = useRef(80);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState('');
   const waveWrapRef = useRef(null);
@@ -55,6 +58,13 @@ export default function AnalysisDetail({ params }) {
   const [aiErr, setAiErr] = useState('');
   const [aiSubmitted, setAiSubmitted] = useState(false);
   const [pcmPayload, setPcmPayload] = useState(null);
+  const payloadForRequest = useMemo(() => {
+    if (!pcmPayload) return null;
+    const { sampleRate, pcm } = pcmPayload;
+    if (pcm == null) return null;
+    const arr = Array.isArray(pcm) ? pcm : Array.from(pcm);
+    return { sampleRate, pcm: arr };
+  }, [pcmPayload]);
   const [useHsmm, setUseHsmm] = useState(false);
   const [quality, setQuality] = useState(null);
   const [openResp, setOpenResp] = useState(true);
@@ -94,6 +104,7 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => {
     try { setUseHsmm(localStorage.getItem('vh_use_hsmm') === '1'); } catch {}
   }, []);
+  useEffect(() => { pxPerSecRef.current = pxPerSec; }, [pxPerSec]);
   useEffect(() => {
     const el = contentRef.current; if (!el) return;
     const ro = new ResizeObserver(() => {
@@ -281,13 +292,16 @@ export default function AnalysisDetail({ params }) {
     (async () => {
       try {
         const raw = sessionStorage.getItem('vh_guest_result');
-        if (!raw) {
+        const stored = raw ? JSON.parse(raw) : null;
+        const transfer = consumeGuestTransfer();
+        const data = transfer ? { ...stored, ...transfer } : stored;
+        const needsTransfer = !!(stored?.needsTransfer && !transfer);
+        if (!data) {
           router.replace('/analysis');
           return;
         }
-        const data = JSON.parse(raw);
         if (cancelled || !data) return;
-        const fallbackName = data.name || t('NewAnalysis');
+        const fallbackName = data.name || newAnalysisLabel;
         const metaBase = {
           id: 'guest',
           filename: fallbackName,
@@ -308,16 +322,67 @@ export default function AnalysisDetail({ params }) {
           setUseHsmm(data.useHsmm);
           guestHsmmRef.current = data.useHsmm;
         }
-        if (data.payload) setPcmPayload(data.payload);
+        if (transfer && (!stored || stored?.needsTransfer)) {
+          const variants = [
+            { ...transfer, payload: undefined, needsTransfer: false },
+            { ...transfer, payload: undefined, specBase64: null, needsTransfer: false },
+          ];
+          let persisted = false;
+          for (const variant of variants) {
+            try {
+              sessionStorage.setItem('vh_guest_result', JSON.stringify(variant));
+              persisted = true;
+              break;
+            } catch (err) {
+              try { sessionStorage.removeItem('vh_guest_result'); } catch {}
+            }
+          }
+          if (!persisted && stored) {
+            try { sessionStorage.setItem('vh_guest_result', JSON.stringify(stored)); } catch {}
+          }
+        }
+        let payload = data.payload;
+        if (!payload && data.payloadBase64 && data.payloadSampleRate) {
+          const arr = base64ToFloat32Array(data.payloadBase64);
+          if (arr) {
+            payload = { sampleRate: data.payloadSampleRate, pcm: arr };
+          }
+        }
+        if (payload) setPcmPayload(payload);
         if (data.durationSec) setDuration(data.durationSec);
         else if (data.features?.durationSec) setDuration(data.features.durationSec);
-        const audioBlob = data.audioBase64 ? base64ToBlob(data.audioBase64, data.mime || data.type || 'audio/wav') : null;
-        if (data.audioDataUrl) {
-          setAudioUrl(data.audioDataUrl);
-        } else if (audioBlob) {
-          const url = URL.createObjectURL(audioBlob);
-          guestAssetsRef.current.audio = url;
-          setAudioUrl(url);
+        if (needsTransfer) {
+          setAudioError('游客暂存的音频已过期，请返回重新上传。');
+        } else {
+          setAudioError(null);
+          const mimeType = data.mime || data.type || 'audio/wav';
+          let audioBlob = null;
+          if (data.audioBase64) {
+            audioBlob = base64ToBlob(data.audioBase64, mimeType);
+          } else if (data.audioDataUrl) {
+            const commaIdx = data.audioDataUrl.indexOf(',');
+            if (commaIdx > -1) {
+              const header = data.audioDataUrl.slice(0, commaIdx);
+              const match = header.match(/^data:([^;]+);/i);
+              const inferredMime = match?.[1] || mimeType;
+              try {
+                audioBlob = base64ToBlob(data.audioDataUrl.slice(commaIdx + 1), inferredMime);
+              } catch (err) {
+                console.warn('failed to decode guest audio data url', err);
+              }
+            }
+          }
+          if (audioBlob) {
+            if (guestAssetsRef.current.audio) revokeObjectUrl(guestAssetsRef.current.audio);
+            const url = URL.createObjectURL(audioBlob);
+            guestAssetsRef.current.audio = url;
+            setAudioUrl(url);
+          } else if (data.audioDataUrl) {
+            // Fall back to the raw data URL if blob reconstruction fails so playback still has a chance.
+            setAudioUrl(data.audioDataUrl);
+          } else {
+            setAudioError('音频资源缺失，请返回重新上传。');
+          }
         }
         if (data.specBase64) {
           const specBlob = base64ToBlob(data.specBase64, 'image/png');
@@ -344,11 +409,11 @@ export default function AnalysisDetail({ params }) {
         guestAssetsRef.current.spec = null;
       }
     };
-  }, [isGuest, router, t]);
+  }, [isGuest, router, newAnalysisLabel]);
 
   useEffect(() => {
     if (!isGuest) return;
-    if (!pcmPayload) return;
+    if (!payloadForRequest) return;
     if (guestHsmmRef.current === useHsmm && adv) return;
     let cancelled = false;
     setLoading(s => ({ ...s, adv:true }));
@@ -357,7 +422,7 @@ export default function AnalysisDetail({ params }) {
         const resp = await fetch(VIZ_BASE + '/pcg_advanced', {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ ...pcmPayload, useHsmm })
+          body: JSON.stringify({ ...payloadForRequest, useHsmm })
         });
         if (!resp.ok) return;
         const json = await resp.json();
@@ -370,7 +435,37 @@ export default function AnalysisDetail({ params }) {
     })();
     guestHsmmRef.current = useHsmm;
     return () => { cancelled = true; };
-  }, [isGuest, useHsmm, pcmPayload]);
+  }, [isGuest, useHsmm, payloadForRequest, adv]);
+
+  useEffect(() => {
+    if (!isGuest) return;
+    if (specUrl) return;
+    if (!payloadForRequest) return;
+    let cancelled = false;
+    setLoading(s => ({ ...s, spec:true }));
+    (async () => {
+      try {
+        const width = Math.max(800, Math.min(1400, Math.floor(contentWidth)));
+        const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ ...payloadForRequest, maxFreq:2000, width, height: 320 })
+        });
+        if (!resp.ok) return;
+        const imgBlob = await resp.blob();
+        if (cancelled) return;
+        if (guestAssetsRef.current.spec) revokeObjectUrl(guestAssetsRef.current.spec);
+        const surl = URL.createObjectURL(imgBlob);
+        guestAssetsRef.current.spec = surl;
+        setSpecUrl(surl);
+      } catch (err) {
+        if (!cancelled) console.warn('guest spec recompute failed', err);
+      } finally {
+        if (!cancelled) setLoading(s => ({ ...s, spec:false }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isGuest, payloadForRequest, specUrl, contentWidth]);
 
   // Load current user once and subscribe to profile changes; seed from cache to avoid flicker
   useEffect(() => {
@@ -675,37 +770,75 @@ export default function AnalysisDetail({ params }) {
   }, [meta, token]);
 
   // 不再自动调用后端 ai_start 进行计算；如需自动生成，可在此直接调用 LLM 服务
-  // Init WaveSurfer bound to the HTMLAudioElement (so bottom control bar controls everything)
+  // Init WaveSurfer once the audio metadata is available so MediaElement backend has duration info
   useEffect(() => {
-    if (!audioUrl || !waveWrapRef.current || !audioRef.current) return;
-    if (wsRef.current) { try { wsRef.current.destroy(); } catch {} wsRef.current = null; }
-    const ws = WaveSurfer.create({
-      container: waveWrapRef.current,
-      media: audioRef.current,
-      height: 160,
-      minPxPerSec: pxPerSec,
-      waveColor: '#4F4A85',
-      progressColor: '#38B3D6',
-      cursorColor: '#FF0000',
-      cursorWidth: 2,
-      normalize: true,
-      interact: false,
-      plugins: [
-        TimelinePlugin.create({ container: timelineRef.current }),
-        ZoomPlugin.create({ maxZoom: 100, minZoom: 1 })
-      ],
-    });
-    ws.on('ready', () => {
-      const d = ws.getDuration();
-      setDuration(d);
-      const cw = waveWrapRef.current?.clientWidth || 800;
-      const minPx = d > 0 ? ((cw + 2) / d) : 100;
-      setPxPerSec(minPx);
-      ws.zoom(minPx);
-    });
-    wsRef.current = ws;
+    const el = audioRef.current;
+    if (!audioUrl || !waveWrapRef.current || !el) return;
+    let disposed = false;
+
+    const setupWaveSurfer = () => {
+      if (disposed || !waveWrapRef.current || !audioRef.current) return;
+      if (wsRef.current) {
+        try { wsRef.current.destroy(); } catch {}
+        wsRef.current = null;
+      }
+      if (timelineRef.current) {
+        try { timelineRef.current.innerHTML = ''; } catch {}
+      }
+      const ws = WaveSurfer.create({
+        container: waveWrapRef.current,
+        media: audioRef.current,
+        height: 160,
+        minPxPerSec: pxPerSecRef.current || 80,
+        waveColor: '#4F4A85',
+        progressColor: '#38B3D6',
+        cursorColor: '#FF0000',
+        cursorWidth: 2,
+        normalize: true,
+        interact: false,
+        plugins: [
+          TimelinePlugin.create({ container: timelineRef.current }),
+          ZoomPlugin.create({ maxZoom: 100, minZoom: 1 })
+        ],
+      });
+      ws.on('ready', () => {
+        if (disposed) return;
+        const d = ws.getDuration();
+        setDuration(d);
+        const cw = waveWrapRef.current?.clientWidth || 800;
+        const minPx = d > 0 ? ((cw + 2) / d) : 100;
+        const next = Math.max(1, minPx);
+        try { ws.zoom(next); } catch {}
+        setPxPerSec(prev => (Math.abs(prev - next) < 0.5 ? prev : next));
+      });
+      wsRef.current = ws;
+    };
+
+    const handleMeta = () => {
+      if (disposed) return;
+      setupWaveSurfer();
+    };
+
+    const handleError = () => {
+      if (!disposed) setAudioError('音频加载失败，请返回重新上传。');
+    };
+
+    el.addEventListener('loadedmetadata', handleMeta);
+    el.addEventListener('error', handleError);
+
+    try { el.load(); } catch {}
+    if (el.readyState >= 1) {
+      handleMeta();
+    }
+
     return () => {
-      try { ws.destroy(); } catch {}
+      disposed = true;
+      el.removeEventListener('loadedmetadata', handleMeta);
+      el.removeEventListener('error', handleError);
+      if (wsRef.current) {
+        try { wsRef.current.destroy(); } catch {}
+        wsRef.current = null;
+      }
     };
   }, [audioUrl]);
 

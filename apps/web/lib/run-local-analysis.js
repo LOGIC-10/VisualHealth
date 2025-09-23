@@ -16,6 +16,37 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+function base64ToArrayBuffer(b64) {
+  const binary = atob(b64);
+  const len = binary.length;
+  const buffer = new ArrayBuffer(len);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return buffer;
+}
+
+function float32ArrayToBase64(arr) {
+  if (!arr) return null;
+  const view = arr instanceof Float32Array ? new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength) : null;
+  if (!view) return null;
+  const copy = new Uint8Array(view);
+  return arrayBufferToBase64(copy.buffer);
+}
+
+export function base64ToFloat32Array(b64) {
+  if (!b64) return null;
+  try {
+    const buffer = base64ToArrayBuffer(b64);
+    if (buffer.byteLength % 4 !== 0) return null;
+    return new Float32Array(buffer);
+  } catch (err) {
+    console.warn('base64ToFloat32Array failed', err);
+    return null;
+  }
+}
+
 async function blobToBase64(blob) {
   const arrayBuffer = await blob.arrayBuffer();
   return arrayBufferToBase64(arrayBuffer);
@@ -43,10 +74,12 @@ export async function runLocalAnalysis(file, { useHsmm = false } = {}) {
     downsampled[i] = channel[i * ratio] || 0;
   }
 
+  const payloadSampleRate = Math.round(audioBuf.sampleRate / ratio);
   const payload = {
-    sampleRate: Math.round(audioBuf.sampleRate / ratio),
+    sampleRate: payloadSampleRate,
     pcm: Array.from(downsampled)
   };
+  const payloadBase64 = float32ArrayToBase64(downsampled);
 
   const featuresResp = await fetch(ANALYSIS_BASE + '/analyze', {
     method: 'POST',
@@ -129,6 +162,8 @@ export async function runLocalAnalysis(file, { useHsmm = false } = {}) {
     adv,
     extra,
     payload,
+    payloadBase64,
+    payloadSampleRate,
     specBlob,
     specBase64,
     durationSec: audioBuf.duration,

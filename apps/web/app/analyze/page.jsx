@@ -5,6 +5,7 @@ import { useI18n } from '../../components/i18n';
 import WaveSurfer from 'wavesurfer.js';
 import { API } from '../../lib/api';
 import { runLocalAnalysis } from '../../lib/run-local-analysis';
+import { setGuestTransfer } from '../../lib/guest-transfer';
 
 export default function AnalyzePage() {
   const router = useRouter();
@@ -135,6 +136,7 @@ export default function AnalyzePage() {
         }
       } else {
         try {
+          const payloadSampleRate = result.payload?.sampleRate || null;
           const guestData = {
             name: file.name,
             type: file.type || 'audio/wav',
@@ -146,13 +148,39 @@ export default function AnalyzePage() {
             specBase64: result.specBase64 || null,
             quality: result.quality || null,
             payload: result.payload,
+            payloadBase64: result.payloadBase64 || null,
+            payloadSampleRate,
             useHsmm,
             durationSec: result.durationSec || null,
             audioBase64: result.audioBase64,
-            audioDataUrl: result.audioDataUrl || null,
             mime: result.mime || (file.type || 'audio/wav')
           };
-          sessionStorage.setItem('vh_guest_result', JSON.stringify(guestData));
+          setGuestTransfer(guestData);
+          const { payload, ...persistable } = guestData;
+          let stored = false;
+          let lastErr = null;
+          const variants = [
+            { ...persistable, needsTransfer: false },
+            { ...persistable, specBase64: null, needsTransfer: false },
+            { ...persistable, specBase64: null, audioBase64: null, needsTransfer: true }
+          ];
+          for (const variant of variants) {
+            try {
+              sessionStorage.setItem('vh_guest_result', JSON.stringify(variant));
+              stored = true;
+              break;
+            } catch (err) {
+              lastErr = err;
+              try { sessionStorage.removeItem('vh_guest_result'); } catch {}
+            }
+          }
+          if (!stored) {
+            console.warn('guest stash failed', lastErr);
+            setGuestTransfer(null);
+            setGuestNoticeOpen(true);
+            setGuestErr('浏览器暂存失败，请尝试更换浏览器或登录后再试。');
+            return;
+          }
           router.replace('/analysis/guest');
           return;
         } catch (err) {

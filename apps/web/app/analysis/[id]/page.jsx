@@ -209,15 +209,16 @@ export default function AnalysisDetail({ params }) {
       }
       const reader = resp.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
       let assistantAccum = '';
-      while (true) {
-        const { value, done } = await reader.read(); if (done) break;
-        buffer += decoder.decode(value, { stream: true }); let idx;
+      const flushBuffer = () => {
+        let idx;
         while ((idx = buffer.indexOf('\n\n')) >= 0) {
-          const raw = buffer.slice(0, idx).trim(); buffer = buffer.slice(idx + 2);
-          if (!raw) continue; const line = raw.split('\n').find(l=> l.startsWith('data:')) || raw;
-          const jsonStr = line.replace(/^data:\s*/, '');
+          const chunk = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 2);
+          if (!chunk) continue;
+          const line = chunk.split('\n').find(l => l.startsWith('data:')) || chunk;
+          const payload = line.replace(/^data:\s*/, '');
           try {
-            const evt = JSON.parse(jsonStr);
+            const evt = JSON.parse(payload);
             if (evt?.delta) {
               const piece = String(evt.delta);
               setChatMsgs(cur => {
@@ -225,11 +226,14 @@ export default function AnalysisDetail({ params }) {
                 const last = c[c.length - 1];
                 if (last && last.role === 'assistant') {
                   const prev = last.content || '';
-                  // Robust merge: allow for providers that send cumulative text or overlapping chunks
                   let k = Math.min(prev.length, piece.length);
                   while (k > 0 && !prev.endsWith(piece.slice(0, k))) k--;
                   const toAppend = piece.slice(k);
-                  if (toAppend) { assistantAccum += toAppend; assistantAccumRef.current += toAppend; last.content = prev + toAppend; }
+                  if (toAppend) {
+                    assistantAccum += toAppend;
+                    assistantAccumRef.current += toAppend;
+                    last.content = prev + toAppend;
+                  }
                 }
                 return c;
               });
@@ -237,6 +241,19 @@ export default function AnalysisDetail({ params }) {
             if (evt?.error) throw new Error(evt.error);
           } catch {}
         }
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          if (buffer.includes('\r')) buffer = buffer.replace(/\r/g, '\n');
+          flushBuffer();
+        }
+        if (done) break;
+      }
+      if (buffer.trim()) {
+        buffer += '\n\n';
+        flushBuffer();
       }
       // persist streamed reply
       try { if (assistantAccum && assistantAccum.trim()) await fetch(ANALYSIS_BASE + `/records/${id}/chat`, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ role:'assistant', content: assistantAccum }) }); } catch {}
@@ -683,11 +700,12 @@ export default function AnalysisDetail({ params }) {
           // Prefer media-based endpoint to avoid large JSON
           let resp = null;
           try {
-            if (meta?.media_id) {
+            const mediaId = meta?.media_id ? String(meta.media_id) : null;
+            if (mediaId) {
               // Quality gate for media; fallback to PCM when media decode unsupported
               let pass = true;
               try {
-                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id }) });
+                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId }) });
                 if (qr.ok) {
                   const qj = await qr.json();
                   setQuality(qj);
@@ -705,7 +723,7 @@ export default function AnalysisDetail({ params }) {
                 } catch { pass = false; }
               }
               if (!pass) { setLoading(s=>({ ...s, adv:false })); return; }
-              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
+              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId, hash: audioHash, useHsmm }) });
             }
           } catch {}
           if (!resp || !resp.ok) {

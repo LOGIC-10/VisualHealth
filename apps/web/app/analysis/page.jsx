@@ -508,12 +508,14 @@ export default function AnalysisListPage() {
         </div>
       )}
       {!loading && files.length === 0 && (
-        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, padding:16, color:'#475569' }}>
-          <div style={{ fontWeight:600, marginBottom:6 }}>暂无分析记录</div>
-          <div style={{ marginBottom:10 }}>你可以点击右上角「新建分析」上传音频，或进入即时分析快速体验。</div>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            <button onClick={pickFiles} className="vh-btn vh-btn-outline" style={{ padding:'8px 12px' }}>新建分析（上传音频）</button>
-            <Link href="/analyze" className="vh-btn vh-btn-primary" style={{ textDecoration:'none', padding:'8px 12px' }}>进入即时分析</Link>
+        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:16, padding:'40px 32px', textAlign:'center', color:'#334155' }}>
+          <div style={{ fontSize:24, fontWeight:600, marginBottom:12 }}>还没有分析记录</div>
+          <div style={{ maxWidth:480, margin:'0 auto 20px', fontSize:15, lineHeight:1.6, color:'#64748b' }}>
+            点击「新建分析」上传心音音频，系统会为你生成频谱图与临床级 PCG 指标。
+            建议录制 6 秒以上、靠近胸口且环境安静的音频，以获得更精确的结果。
+          </div>
+          <div style={{ display:'flex', justifyContent:'center', gap:12, flexWrap:'wrap' }}>
+            <button onClick={pickFiles} className="vh-btn vh-btn-primary vh-btn-lg">上传音频开始分析</button>
           </div>
         </div>
       )}

@@ -80,14 +80,15 @@ def _sha256_hex_of_floats(y: np.ndarray, sr: int) -> str:
 
 def _welch_band_power(y: np.ndarray, sr: int, lo: float, hi: float) -> float:
     n = len(y)
-    if n < 64:
+    if n < 256:
         return 0.0
-    win = 1024 if n >= 2048 else max(128, 1 << (int(np.log2(n)) - 1))
+    exp = max(7, int(np.floor(np.log2(n))) - 1)
+    win = 1 << exp
     hop = max(32, win // 2)
     total = 0.0
     frames = 0
     w = np.hanning(win).astype(np.float32)
-    for k in range(0, n - win, hop):
+    for k in range(0, max(1, n - win), hop):
         seg = y[k:k + win] * w
         sp = np.fft.rfft(seg)
         freqs = np.fft.rfftfreq(win, 1.0 / sr)
@@ -122,8 +123,7 @@ def _pcg_quality_core(y: np.ndarray, sr: int):
     win = max(1, int(0.05 * sr))
     env = np.convolve(np.abs(y), np.ones(win, dtype=np.float32) / float(win), mode='same')
     env /= (np.max(env) + 1e-9)
-    ac_full = np.correlate(env, env, mode='full')
-    ac = ac_full[n - 1: n - 1 + int(2.0 * sr)]
+    ac = _autocorr_positive(env, int(2.0 * sr))
     # normalized by ac at 0 lag
     ac0 = ac[0] + 1e-9
     min_lag = int(0.3 * sr)  # 200 bpm
@@ -132,11 +132,12 @@ def _pcg_quality_core(y: np.ndarray, sr: int):
     hr_bpm = None
     if max_lag > min_lag + 5:
         seg = ac[min_lag:max_lag]
-        pk = int(np.argmax(seg))
-        peak_val = float(seg[pk])
-        pr = float(max(0.0, min(1.0, peak_val / ac0)))
-        lag = min_lag + pk
-        hr_bpm = float(60.0 * sr / lag)
+        if seg.size:
+            pk = int(np.argmax(seg))
+            peak_val = float(seg[pk])
+            pr = float(max(0.0, min(1.0, peak_val / ac0)))
+            lag = min_lag + pk
+            hr_bpm = float(60.0 * sr / lag)
     if pr < 0.12:
         issues.append('weak_periodicity')
 
@@ -627,15 +628,37 @@ async def compute_features_pcm(
 
 
 def _moving_average(x: np.ndarray, win: int):
-    if win <= 1:
-        return x.copy()
+    arr = np.abs(np.asarray(x, dtype=np.float32))
+    if win <= 1 or arr.size == 0:
+        return arr.copy()
     win = int(win)
-    c = np.cumsum(np.insert(np.abs(x), 0, 0))
-    m = (c[win:] - c[:-win]) / float(win)
-    # pad to original length
+    if win >= arr.size:
+        mean_val = float(np.mean(arr)) if arr.size else 0.0
+        return np.full_like(arr, mean_val, dtype=np.float32)
+    csum = np.cumsum(np.insert(arr, 0, 0.0, axis=0))
+    window = csum[win:] - csum[:-win]
+    m = window / float(win)
     pad_left = win // 2
-    pad_right = len(x) - len(m) - pad_left
-    return np.pad(m, (pad_left, pad_right), mode='edge')
+    pad_right = arr.size - m.size - pad_left
+    if pad_right < 0:
+        pad_right = 0
+    return np.pad(m.astype(np.float32, copy=False), (pad_left, pad_right), mode='edge')[:arr.size]
+
+
+def _autocorr_positive(x: np.ndarray, length: int) -> np.ndarray:
+    arr = np.asarray(x, dtype=np.float32)
+    n = arr.size
+    if n == 0 or length <= 0:
+        return np.zeros(0, dtype=np.float32)
+    length = int(length)
+    eff = min(length, n)
+    fft_len = 1 << int(np.ceil(np.log2(n + eff)))
+    spec = np.fft.rfft(arr, fft_len)
+    ac_full = np.fft.irfft(spec * np.conjugate(spec), fft_len)
+    ac_pos = ac_full[n-1:n-1+eff]
+    if eff < length:
+        ac_pos = np.pad(ac_pos, (0, length - eff), mode='edge')
+    return ac_pos.astype(np.float32, copy=False)
 
 
 def _find_peaks(x: np.ndarray, distance: int, threshold: float):
@@ -723,6 +746,10 @@ async def pcg_advanced(
     if n == 0 or sr <= 0:
         return JSONResponse({"error": "empty"}, status_code=400)
 
+    hsmm_requested = bool(useHsmm)
+    if useHsmm and not authorization:
+        useHsmm = False
+
     # Optional decimation for performance: downsample to ~2000 Hz max
     # PCG metrics here mostly rely on bands < 600 Hz and envelope timing
     # This simple decimator (box filter + pick every k-th sample) avoids SciPy dependency
@@ -740,19 +767,22 @@ async def pcg_advanced(
             n = len(y)
 
     dur = n / sr
+    if useHsmm and dur > 8.0:
+        useHsmm = False
     # Envelope
     env = _moving_average(y, max(1, int(0.05 * sr)))
     env = env / (np.max(np.abs(env)) + 1e-9)
 
     # HR estimation by autocorrelation of envelope
-    ac = np.correlate(env, env, mode='full')[n-1: n-1 + int(1.5*sr)]
+    ac = _autocorr_positive(env, int(1.5 * sr))
     min_lag = int(0.4 * sr)  # 150 bpm upper
     max_lag = int(1.5 * sr)  # 40 bpm lower
     peak_lag = None
     if max_lag > min_lag + 5:
         lag_seg = ac[min_lag:max_lag]
-        lag_idx = np.argmax(lag_seg)
-        peak_lag = min_lag + lag_idx
+        if lag_seg.size:
+            lag_idx = np.argmax(lag_seg)
+            peak_lag = min_lag + lag_idx
     hr_bpm = 60.0 * sr / peak_lag if peak_lag else None
 
     # Peak picking and S1/S2 assignment (HSMM optional)
@@ -1273,7 +1303,9 @@ async def pcg_advanced(
                 'poincareSD2': sd2,
                 'afSuspected': af_suspected,
                 'ectopySuspected': ectopy_suspected
-            }
+            },
+            'hsmmUsed': bool(useHsmm),
+            'hsmmRequested': hsmm_requested
         }
     }
     _t1_all = _time.perf_counter()

@@ -11,11 +11,31 @@ export default function CommunityPage() {
   const { t, lang } = useI18n();
   const [posts, setPosts] = useState([]);
   const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
 
-  async function load(withToken) {
-    const hdr = withToken ? { Authorization: `Bearer ${withToken}` } : undefined;
-    const resp = await fetch(FEED_BASE + '/posts', { headers: hdr });
-    setPosts(await resp.json());
+  async function load(withToken, isCancelled) {
+    setLoading(true);
+    setLoadErr('');
+    try {
+      const headers = withToken ? { Authorization: `Bearer ${withToken}` } : undefined;
+      const resp = await fetch(FEED_BASE + '/posts', { headers });
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`fetch posts failed: ${resp.status} ${resp.statusText} ${text}`.trim());
+      }
+      const data = await resp.json().catch(() => ([]));
+      if (isCancelled?.()) return;
+      setPosts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      if (isCancelled?.()) return;
+      console.warn('community posts load failed', err);
+      setPosts([]);
+      setLoadErr(lang === 'zh' ? '加载社区内容失败，请稍后再试。' : 'Unable to load community posts right now.');
+    } finally {
+      if (isCancelled?.()) return;
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -27,8 +47,12 @@ export default function CommunityPage() {
   useEffect(() => {
     // Always load once token state is initialized ('' for visitors)
     if (token === null) return;
-    load(token || undefined);
-  }, [token]);
+    let cancelled = false;
+    (async () => {
+      await load(cancelled ? undefined : (token || undefined), () => cancelled);
+    })();
+    return () => { cancelled = true; };
+  }, [token, lang]);
 
   // Update post authors immediately when profile changes (without refetch)
   useEffect(() => {
@@ -85,7 +109,18 @@ export default function CommunityPage() {
         )}
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns: gridStyle.columns, gap: gridStyle.gap }}>
+      {loading && (
+        <div style={{ color:'#475569', marginTop:32 }}>{t('Loading')}</div>
+      )}
+      {(!loading && loadErr) && (
+        <div style={{ marginTop:24, padding:16, borderRadius:12, background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca' }}>{loadErr}</div>
+      )}
+
+      {!loading && posts.length === 0 && !loadErr && (
+        <div style={{ color:'#94a3b8', marginTop:32 }}>{lang === 'zh' ? '暂时还没有社区内容。' : 'Community posts will appear here soon.'}</div>
+      )}
+
+      <div style={{ display:'grid', gridTemplateColumns: gridStyle.columns, gap: gridStyle.gap, opacity: loading ? 0.4 : 1, pointerEvents: loading ? 'none' : 'auto' }}>
         {posts.map((p) => {
           const mids = parseMediaIds(p.media_ids);
           const cover = (mids && mids.length) ? `${MEDIA_BASE}/file/${mids[0]}` : null;

@@ -120,30 +120,29 @@ export default function AnalysisListPage() {
         const running = new Set(); let idx = 0;
         const worker = async (item) => {
           try {
-        // Prefer signed URL to fetch the audio without Authorization header
-        let arr = null;
-        try {
-          const surl = await fetch(MEDIA_BASE + `/file_url/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
-          if (surl.ok) {
-            const j = await surl.json();
-            if (j?.url) {
-              const mediaUrl = toSameOriginMediaUrl(j.url, MEDIA_BASE);
-              const fr = await fetch(mediaUrl);
-              if (fr.ok) {
-                const blob = await fr.blob();
-                arr = await blob.arrayBuffer();
+            // Prefer signed URL to fetch the audio without Authorization header
+            let arr = null;
+            try {
+              const surl = await fetch(MEDIA_BASE + `/file_url/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+              if (surl.ok) {
+                const j = await surl.json();
+                if (j?.url) {
+                  const mediaUrl = toSameOriginMediaUrl(j.url, MEDIA_BASE);
+                  const fr = await fetch(mediaUrl);
+                  if (fr.ok) {
+                    const blob = await fr.blob();
+                    arr = await blob.arrayBuffer();
+                  }
+                }
               }
+            } catch {}
+            if (!arr) {
+              const r = await fetch(MEDIA_BASE + `/file/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
+              if (!r.ok) return;
+              const blob = await r.blob(); arr = await blob.arrayBuffer();
             }
-          }
-        } catch {}
-        if (!arr) {
-          const r = await fetch(MEDIA_BASE + `/file/${item.media_id}`, { headers: { Authorization: `Bearer ${token}` } });
-          if (!r.ok) return;
-          const blob = await r.blob(); arr = await blob.arrayBuffer();
-        }
-        const dec = await decodeDownsample(arr); if (!dec) return;
+            const dec = await decodeDownsample(arr); if (!dec) return;
             const { payload } = dec;
-            // Quality gate before computing ADV
             let passQuality = true;
             try {
               const qr = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
@@ -181,7 +180,6 @@ export default function AnalysisListPage() {
             running.add(p);
           }
           if (running.size === 0 && idx >= pending.length) {
-            // One-shot refresh
             (async () => {
               try {
                 const r = await fetch(ANALYSIS_BASE + '/records', { headers: { Authorization: `Bearer ${token}` } });

@@ -739,61 +739,30 @@ export default function AnalysisDetail({ params }) {
         })();
         needAdv && void (async ()=>{
           const t0 = performance.now();
-          // Prefer media-based endpoint to avoid large JSON
-          let resp = null;
           try {
-            if (meta?.media_id) {
-              // Quality gate for media; fallback to PCM when media decode unsupported
-              let pass = true;
-              try {
-                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id }) });
-                if (qr.ok) {
-                  const qj = await qr.json();
-                  setQuality(qj);
-                  pass = !!(qj.isHeart && qj.qualityOk);
-                } else {
-                  pass = false;
-                }
-              } catch { pass = false; }
-              if (!pass) {
-                try {
-                  const qr2 = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-                  const qj2 = await qr2.json();
-                  setQuality(qj2);
-                  pass = !!(qj2.isHeart && qj2.qualityOk);
-                } catch { pass = false; }
-              }
-              if (!pass) { setLoading(s=>({ ...s, adv:false })); return; }
-              resp = await fetch(VIZ_BASE + '/pcg_advanced_media', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.media_id, hash: audioHash, useHsmm }) });
-            }
-          } catch {}
-          if (!resp || !resp.ok) {
-            // Fallback to PCM endpoint
             try {
-              // Quality gate for PCM
-              try {
-                const qr2 = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
-                const qj2 = await qr2.json();
-                setQuality(qj2);
-                if (!(qj2.isHeart && qj2.qualityOk)) {
+              const qr = await fetch(VIZ_BASE + '/pcg_quality_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+              if (qr.ok) {
+                const qj = await qr.json();
+                setQuality(qj);
+                if (!(qj.isHeart && qj.qualityOk)) {
                   setLoading(s=>({ ...s, adv:false }));
                   return;
                 }
+              }
+            } catch {}
+            const resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, useHsmm }) });
+            const t1 = performance.now();
+            if (resp.ok) {
+              try {
+                const comp = parseFloat(resp.headers.get('x-compute-time')||'');
+                console.info('[adv] reqMs', (t1-t0).toFixed(1), 'serverMs', isNaN(comp)?'—':comp.toFixed(1));
               } catch {}
-              resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, useHsmm }) });
-            } catch {}
-          }
-          const t1 = performance.now();
-          if (resp && resp.ok) {
-            try {
-              const comp = parseFloat(resp.headers.get('x-compute-time')||'');
-              console.info('[adv] reqMs', (t1-t0).toFixed(1), 'serverMs', isNaN(comp)?'—':comp.toFixed(1));
-            } catch {}
-            const data = await resp.json();
-            setAdv(data);
-            // 后台持久化，便于其他会话直接加载
-            try { await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: data, audioHash }) }); } catch {}
-          }
+              const data = await resp.json();
+              setAdv(data);
+              try { await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: data, audioHash }) }); } catch {}
+            }
+          } catch {}
           setLoading(s=>({ ...s, adv:false })); if (per>0) setProgress(p=>p+per);
         })();
         const width = Math.max(800, Math.min(1400, Math.floor(contentWidth)));

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
 import { API } from '../../lib/api';
+import { toSameOriginMediaUrl } from '../../lib/normalize-media-url';
 import { runLocalAnalysis } from '../../lib/run-local-analysis';
 import { setGuestTransfer } from '../../lib/guest-transfer';
 
@@ -126,7 +127,8 @@ export default function AnalysisListPage() {
           if (surl.ok) {
             const j = await surl.json();
             if (j?.url) {
-              const fr = await fetch(j.url);
+              const mediaUrl = toSameOriginMediaUrl(j.url, MEDIA_BASE);
+              const fr = await fetch(mediaUrl);
               if (fr.ok) {
                 const blob = await fr.blob();
                 arr = await blob.arrayBuffer();

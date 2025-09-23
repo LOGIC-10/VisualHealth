@@ -6,6 +6,7 @@ import { useI18n } from '../../../components/i18n';
 import { renderMarkdown } from '../../../components/markdown';
 import { API } from '../../../lib/api';
 import { base64ToBlob, base64ToFloat32Array, revokeObjectUrl } from '../../../lib/run-local-analysis';
+import { toSameOriginMediaUrl } from '../../../lib/normalize-media-url';
 import { consumeGuestTransfer } from '../../../lib/guest-transfer';
 
 import WaveSurfer from 'wavesurfer.js';
@@ -620,7 +621,8 @@ export default function AnalysisDetail({ params }) {
         if (surl.ok) {
           const j = await surl.json();
           if (j?.url) {
-            const fr = await fetch(j.url);
+            const mediaUrl = toSameOriginMediaUrl(j.url, MEDIA_BASE);
+            const fr = await fetch(mediaUrl);
             if (fr.ok) blob = await fr.blob();
           }
         }

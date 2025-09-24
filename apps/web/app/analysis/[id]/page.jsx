@@ -189,13 +189,71 @@ export default function AnalysisDetail({ params }) {
         })}
       </div>
       <div style={{ padding:12, borderTop:'1px solid #e5e7eb' }}>
-        <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v || chatBusy) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8, flexWrap: isSmallScreen ? 'wrap' : 'nowrap' }}>
-          <input name="msg" placeholder={t('TypeMessage')} autoComplete="off" style={{ flex:1, minWidth: isSmallScreen ? '100%' : 0, padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
-          {!chatBusy ? (
-            <button type="submit" className="vh-btn vh-btn-primary" style={{ padding:'6px 12px' }}>{t('Send')}</button>
-          ) : (
-            <button type="button" onClick={cancelChat} className="vh-btn vh-btn-stop" style={{ padding:'6px 12px' }}>{t('Cancel')}</button>
-          )}
+        <form
+          onSubmit={(e)=>{
+            e.preventDefault();
+            const inputEl = e.target.elements.msg;
+            const v = inputEl?.value?.trim();
+            if (!v || chatBusy) return;
+            inputEl.value = '';
+            sendChat(v);
+          }}
+        >
+          <div style={{ position:'relative', width:'100%' }}>
+            <input
+              name="msg"
+              placeholder={t('TypeMessage')}
+              autoComplete="off"
+              inputMode="text"
+              style={{
+                width:'100%',
+                padding:'12px 14px',
+                paddingRight: isSmallScreen ? '96px' : '104px',
+                border:'1px solid #e5e7eb',
+                borderRadius:12,
+                fontSize:16,
+                lineHeight:1.4,
+                background:'#fff',
+                transition:'border-color 120ms ease'
+              }}
+            />
+            {!chatBusy ? (
+              <button
+                type="submit"
+                className="vh-btn vh-btn-primary"
+                style={{
+                  position:'absolute',
+                  top:'50%',
+                  right:6,
+                  transform:'translateY(-50%)',
+                  minHeight:'unset',
+                  padding:'6px 14px',
+                  borderRadius:10,
+                  fontSize:14
+                }}
+              >
+                {t('Send')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={cancelChat}
+                className="vh-btn vh-btn-stop"
+                style={{
+                  position:'absolute',
+                  top:'50%',
+                  right:6,
+                  transform:'translateY(-50%)',
+                  minHeight:'unset',
+                  padding:'6px 14px',
+                  borderRadius:10,
+                  fontSize:14
+                }}
+              >
+                {lang==='zh' ? '■ 终止' : '■ Stop'}
+              </button>
+            )}
+          </div>
         </form>
         {chatErr && <div style={{ marginTop:8, color:'#b91c1c', fontSize:13 }}>{chatErr}</div>}
       </div>

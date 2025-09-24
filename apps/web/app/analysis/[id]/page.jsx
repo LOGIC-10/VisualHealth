@@ -214,6 +214,7 @@ export default function AnalysisDetail({ params }) {
                 fontSize:16,
                 lineHeight:1.4,
                 background:'#fff',
+                color:'#0f172a',
                 transition:'border-color 120ms ease'
               }}
             />

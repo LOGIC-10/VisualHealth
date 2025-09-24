@@ -1777,7 +1777,12 @@ export default function AnalysisDetail({ params }) {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           {aiText && canUseAccountFeatures && (
-            <button onClick={()=> setChatOpen(true)} className="vh-btn vh-btn-outline" style={{ padding:'6px 10px' }}>
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="vh-btn vh-btn-outline"
+              style={{ padding:'6px 10px' }}
+            >
               {t('StartConversation')}
             </button>
           )}

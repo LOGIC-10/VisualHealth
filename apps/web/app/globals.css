@@ -82,15 +82,11 @@ a { color: inherit; }
 
 /* Shared collapsible section helpers */
 .vh-arrow {
-  opacity: 0;
+  opacity: 1;
   transition: opacity 120ms ease, transform 120ms ease;
   cursor: pointer;
-  pointer-events: none;
-  display: inline-flex;
-}
-.vh-sec-head:hover .vh-arrow {
-  opacity: 1;
   pointer-events: auto;
+  display: inline-flex;
 }
 .vh-rot { transform: rotate(90deg); }
 .vh-collapse {
@@ -108,13 +104,6 @@ a { color: inherit; }
   opacity: 1;
 }
 .vh-btn-link:hover { text-decoration: underline; filter: none; }
-
-@media (hover: none) {
-  .vh-arrow {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
 
 /* Nav links */
 .vh-nav-link {

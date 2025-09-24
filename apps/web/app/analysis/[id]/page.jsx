@@ -114,10 +114,15 @@ export default function AnalysisDetail({ params }) {
               }
             } catch {}
             if (!passQuality) return;
+            const advReqBody = {
+              mediaId: meta.media_id,
+              useHsmm,
+              ...(audioHash ? { hash: audioHash } : {})
+            };
             const advResp = await fetch(VIZ_BASE + '/pcg_advanced_media', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ mediaId: meta.media_id, useHsmm, hash: audioHash })
+              body: JSON.stringify(advReqBody)
             });
             if (!advResp.ok) return;
             const data = await advResp.json();
@@ -139,7 +144,7 @@ export default function AnalysisDetail({ params }) {
             body: JSON.stringify({
               ...(patchedAdv ? { adv: patchedAdv } : {}),
               ...(patchedSpecId ? { specMediaId: patchedSpecId } : {}),
-              audioHash
+              ...(audioHash ? { audioHash } : {})
             })
           });
         } catch (errPatch) {
@@ -1072,7 +1077,8 @@ export default function AnalysisDetail({ params }) {
                 }
               }
             } catch {}
-            const resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, useHsmm }) });
+            const advPayload = { ...payload, useHsmm, ...(audioHash ? { hash: audioHash } : {}) };
+            const resp = await fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(advPayload) });
             const t1 = performance.now();
             if (resp.ok) {
               try {
@@ -1081,7 +1087,8 @@ export default function AnalysisDetail({ params }) {
               } catch {}
               const data = await resp.json();
               setAdv(data);
-              try { await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: data, audioHash }) }); } catch {}
+              const patchPayload = { adv: data, ...(audioHash ? { audioHash } : {}) };
+              try { await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify(patchPayload) }); } catch {}
             }
           } catch {}
           setLoading(s=>({ ...s, adv:false })); if (per>0) setProgress(p=>p+per);
@@ -1093,8 +1100,6 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => {
     if (!token || isGuest) return;
     if (!meta) return;
-    if (!audioHash) return;
-
     const ensureSpec = !meta?.spec_media_id;
     const ensureAdv = !meta?.adv;
 
@@ -1102,7 +1107,8 @@ export default function AnalysisDetail({ params }) {
     const lastWidth = specRequestRef.current.width || 0;
     const widthCandidate = measuredWidth > 0 ? measuredWidth : lastWidth || 0;
     const width = Math.max(320, Math.min(1200, widthCandidate || 640));
-    const key = `${audioHash}_${width}`;
+    const keyHash = audioHash || meta?.media_id || 'nohash';
+    const key = `${keyHash}_${width}`;
 
     if (!payloadForRequest) {
       requestServerAnalysis({ ensureSpec, ensureAdv });
@@ -1123,13 +1129,14 @@ export default function AnalysisDetail({ params }) {
     (async () => {
       const tReq0 = performance.now();
       try {
+        const specPayload = { ...payload, maxFreq: 2000, width, height: 320, ...(audioHash ? { hash: audioHash } : {}) };
         const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ ...payload, hash: audioHash, maxFreq: 2000, width, height: 320 })
+          body: JSON.stringify(specPayload)
         });
         const tReq1 = performance.now();
         if (cancelled) return;
@@ -1157,10 +1164,14 @@ export default function AnalysisDetail({ params }) {
               });
               const j = await up.json();
               if (j?.id) {
+                const patchBody = {
+                  specMediaId: j.id,
+                  ...(audioHash ? { audioHash } : {})
+                };
                 await fetch(ANALYSIS_BASE + `/records/${id}`, {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ specMediaId: j.id, audioHash })
+                  body: JSON.stringify(patchBody)
                 });
               }
             } catch {}

@@ -52,6 +52,7 @@ export default function AnalysisDetail({ params }) {
   const guestHsmmRef = useRef(null);
   const specRequestRef = useRef({ key:'', width:0, inFlight:false });
   const serverSpecRef = useRef({ running:false });
+  const [useHsmm, setUseHsmm] = useState(false);
 
   const requestServerAnalysis = useCallback(async ({ ensureSpec = true, ensureAdv = true } = {}) => {
     if (!meta?.media_id || !token) return;
@@ -166,7 +167,6 @@ export default function AnalysisDetail({ params }) {
     const arr = Array.isArray(pcm) ? pcm : Array.from(pcm);
     return { sampleRate, pcm: arr };
   }, [pcmPayload]);
-  const [useHsmm, setUseHsmm] = useState(false);
   const [quality, setQuality] = useState(null);
   const [openResp, setOpenResp] = useState(true);
   const [openSounds, setOpenSounds] = useState(true);

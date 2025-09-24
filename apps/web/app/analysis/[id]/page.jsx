@@ -91,8 +91,116 @@ export default function AnalysisDetail({ params }) {
   const [waveFocused, setWaveFocused] = useState(false);
   const [navOffset, setNavOffset] = useState(96);
   const contentRef = useRef(null);
-  const [contentWidth, setContentWidth] = useState(960);
+  const [contentWidth, setContentWidth] = useState(0);
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
   const canUseAccountFeatures = !!token && !isGuest;
+
+  const desktopChatStyle = {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 12,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    marginTop: 12,
+    minWidth: 300,
+    maxWidth: 420,
+    alignSelf: 'start',
+    position: 'sticky',
+    top: navOffset,
+    height: `calc(100vh - ${navOffset + 16}px)`
+  };
+
+  const mobileChatStyle = {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 16,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    width: '100%',
+    maxWidth: 480,
+    maxHeight: 'min(90vh, 640px)'
+  };
+
+  const renderChatPanel = (panelStyle) => (
+    <div style={panelStyle}>
+      <div style={{ padding:'12px 16px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+        <div style={{ fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>
+          <span>{t('AIConversation')}</span>
+          {me && (
+            <span style={{ display:'inline-flex', alignItems:'center', gap:6, color:'#64748b', fontWeight:400, fontSize:12 }}>
+              {me.avatar_media_id ? (
+                <img src={`${MEDIA_BASE}/file/${me.avatar_media_id}?v=${me.avatar_media_id}`} alt="me" width={16} height={16} style={{ width:16, height:16, borderRadius:9999, objectFit:'cover' }} />
+              ) : (
+                <span style={{ width:16, height:16, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:10 }}>
+                  {(me?.display_name||me?.email||'U').trim()[0]?.toUpperCase?.()||'U'}
+                </span>
+              )}
+              <span>{me.display_name || me.email}</span>
+            </span>
+          )}
+        </div>
+        <button onClick={()=> setChatOpen(false)} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✕</button>
+      </div>
+      <div ref={chatScrollRef} style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+        {chatMsgs.length===0 && (
+          <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+            <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
+            <div style={{ maxWidth: 280, background:'#f1f5f9', color:'#0f172a', padding:'8px 10px', borderRadius:12, lineHeight:1.5 }}>
+              <div style={{ whiteSpace:'pre-wrap' }}>
+                {lang==='zh'
+                  ? '你好，我是智能心音助手。\n我可以基于本次分析结果，帮你解读报告、回答疑问，或给出复测与就医建议。\n请告诉我你的具体问题。'
+                  : "Hi! I'm your heart-sound assistant.\nI can interpret this analysis, answer questions, and suggest retesting or when to see a doctor.\nWhat would you like to know?"}
+              </div>
+            </div>
+          </div>
+        )}
+        {chatMsgs.map((m, idx) => {
+          const isUser = m.role==='user';
+          return (
+            <div key={idx} style={{ display:'flex', gap:8, alignItems:'flex-start', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+              {!isUser && (
+                <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
+              )}
+              <div style={{ maxWidth: 280, background: isUser ? '#111' : '#f1f5f9', color: isUser ? '#fff' : '#0f172a', padding:'8px 10px', borderRadius:12, lineHeight:1.5 }}>
+                {isUser ? (
+                  <div style={{ whiteSpace:'pre-wrap' }}>{m.content}</div>
+                ) : (
+                  <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content || '') }} />
+                )}
+                {(!m.content && !isUser && chatBusy) && (
+                  <div style={{ marginTop:6, color:'#64748b', fontSize:12 }}>
+                    <span>Thinking…</span>
+                  </div>
+                )}
+              </div>
+              {isUser && (
+                me?.avatar_media_id ? (
+                  <img src={`${MEDIA_BASE}/file/${me.avatar_media_id}?v=${me.avatar_media_id}`} alt="me" width={28} height={28} style={{ width:28, height:28, borderRadius:9999, objectFit:'cover', display:'block' }} />
+                ) : (
+                  <div style={{ width:28, height:28, borderRadius:9999, background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
+                    {(me?.display_name||me?.email||'U')?.trim?.()?.[0]?.toUpperCase?.() || 'U'}
+                  </div>
+                )
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ padding:12, borderTop:'1px solid #e5e7eb' }}>
+        <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v || chatBusy) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8, flexWrap: isSmallScreen ? 'wrap' : 'nowrap' }}>
+          <input name="msg" placeholder={t('TypeMessage')} autoComplete="off" style={{ flex:1, minWidth: isSmallScreen ? '100%' : 0, padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
+          {!chatBusy ? (
+            <button type="submit" className="vh-btn vh-btn-primary" style={{ padding:'6px 12px' }}>{t('Send')}</button>
+          ) : (
+            <button type="button" onClick={cancelChat} className="vh-btn vh-btn-stop" style={{ padding:'6px 12px' }}>{t('Cancel')}</button>
+          )}
+        </form>
+        {chatErr && <div style={{ marginTop:8, color:'#b91c1c', fontSize:13 }}>{chatErr}</div>}
+      </div>
+    </div>
+  );
   useEffect(() => {
     try {
       const nav = document.querySelector('nav');
@@ -108,12 +216,29 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => { pxPerSecRef.current = pxPerSec; }, [pxPerSec]);
   useEffect(() => {
     const el = contentRef.current; if (!el) return;
-    const ro = new ResizeObserver(() => {
-      try { setContentWidth(Math.max(600, Math.floor(el.clientWidth || 960))); } catch {}
-    });
+    const updateWidth = () => {
+      try {
+        const next = Math.floor(el.clientWidth || 0);
+        if (next > 0) setContentWidth(next);
+      } catch {}
+    };
+    const ro = new ResizeObserver(updateWidth);
     ro.observe(el);
-    try { setContentWidth(Math.max(600, Math.floor(el.clientWidth || 960))); } catch {}
+    updateWidth();
     return () => { try { ro.disconnect(); } catch {} };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia('(max-width: 900px)');
+    const handler = () => setIsSmallScreen(mq.matches);
+    handler();
+    if (mq.addEventListener) mq.addEventListener('change', handler);
+    else if (mq.addListener) mq.addListener(handler);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', handler);
+      else if (mq.removeListener) mq.removeListener(handler);
+    };
   }, []);
 
   // Chat state
@@ -124,6 +249,18 @@ export default function AnalysisDetail({ params }) {
   const chatAbortRef = useRef(null);
   const assistantAccumRef = useRef('');
   const chatScrollRef = useRef(null);
+  const twoColGrid = isSmallScreen ? '1fr' : 'repeat(2, minmax(0,1fr))';
+  const pageMargin = isSmallScreen ? '16px auto' : '24px auto';
+  const pagePadding = isSmallScreen ? '0 16px' : '0 24px';
+  const outerMaxWidth = isSmallScreen ? '100%' : `${chatOpen ? 1396 : 960}px`;
+  const layoutStyle = isSmallScreen
+    ? { maxWidth: outerMaxWidth, margin: pageMargin, padding: pagePadding, display: 'block' }
+    : { maxWidth: outerMaxWidth, margin: pageMargin, padding: pagePadding, display: 'grid', gridTemplateColumns: chatOpen ? 'minmax(0, 1fr) minmax(300px, 420px)' : '1fr', gap: 16, alignItems: 'start' };
+  const contentContainerStyle = {
+    maxWidth: isSmallScreen ? '100%' : 960,
+    width: '100%',
+    margin: !isSmallScreen && !chatOpen ? '0 auto' : 0
+  };
 
   useEffect(() => {
     if (!canUseAccountFeatures) setChatOpen(false);
@@ -501,11 +638,13 @@ export default function AnalysisDetail({ params }) {
     if (!isGuest) return;
     if (specUrl) return;
     if (!payloadForRequest) return;
+    const measuredWidth = Math.floor(contentWidth || 0);
+    if (!measuredWidth) return;
     let cancelled = false;
     setLoading(s => ({ ...s, spec:true }));
     (async () => {
       try {
-        const width = Math.max(800, Math.min(1400, Math.floor(contentWidth)));
+        const width = Math.max(320, Math.min(1200, measuredWidth));
         const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', {
           method:'POST',
           headers:{ 'Content-Type':'application/json' },
@@ -765,7 +904,9 @@ export default function AnalysisDetail({ params }) {
           } catch {}
           setLoading(s=>({ ...s, adv:false })); if (per>0) setProgress(p=>p+per);
         })();
-        const width = Math.max(800, Math.min(1400, Math.floor(contentWidth)));
+        const widthBase = Math.floor(contentWidth || 0);
+        if (!widthBase) return;
+        const width = Math.max(320, Math.min(1200, widthBase));
         needSpec && void (async ()=>{
           const tReq0 = performance.now();
           const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, maxFreq:2000, width, height: 320 }) });
@@ -1180,23 +1321,37 @@ export default function AnalysisDetail({ params }) {
   // Timeline is rendered by WaveSurfer TimelinePlugin
 
   if (!token && !isGuest) return (
-    <div style={{ maxWidth: 960, margin: '24px auto', padding: '0 24px' }}>
+    <div style={{ maxWidth: isSmallScreen ? '100%' : '960px', margin: pageMargin, padding: pagePadding }}>
       <button type="button" onClick={()=>router.push('/analysis')} style={{ background:'none', border:'none', padding:0, color:'#2563eb', cursor:'pointer' }}>{t('Back')}</button>
       <div>{t('LoginToView')}</div>
     </div>
   );
 
+  const chatPanelNode = canUseAccountFeatures && chatOpen
+    ? renderChatPanel(isSmallScreen ? mobileChatStyle : desktopChatStyle)
+    : null;
+
+  const mobileChatBackdrop = {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15,23,42,0.35)',
+    zIndex: 50,
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    padding: '24px 16px'
+  };
+
+  const mobileChatInner = {
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'center'
+  };
+
   return (
-    <div style={{
-      maxWidth: chatOpen ? (960 + 420 + 16) : 960,
-      margin: '24px auto',
-      padding: '0 24px',
-      display: 'grid',
-      gridTemplateColumns: chatOpen ? 'minmax(0, 1fr) minmax(300px, 420px)' : '1fr',
-      gap: 16,
-      alignItems: 'start'
-    }}>
-      <div ref={contentRef} style={{ maxWidth: 960, width:'100%', margin: chatOpen ? 0 : '0 auto' }}>
+    <>
+      <div style={layoutStyle}>
+        <div ref={contentRef} style={contentContainerStyle}>
       {quality && (!quality.isHeart || !quality.qualityOk) && (
         <div style={{ marginBottom:12, padding:12, border:'1px solid #fecaca', background:'#fef2f2', color:'#991b1b', borderRadius:12 }}>
           本音频疑似非心音或质量不足，已跳过心音分析。建议在安静环境靠近胸前重新录制（≥6秒）。
@@ -1229,17 +1384,17 @@ export default function AnalysisDetail({ params }) {
       </div>
       {/* Sub-title: Waveform */}
       <div className="vh-sec-head" style={{ fontSize: 18, fontWeight: 600, margin: '8px 0 6px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap: isSmallScreen ? 'wrap' : 'nowrap' }}>
           {/* waveform icon */}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 12h3l2-6 3 12 2-6h8" stroke="#0f172a" strokeWidth="1.5"/></svg>
           <span>{t('Waveform')}</span>
         </div>
       </div>
       {meta && (
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8, flexWrap:'wrap', rowGap:8 }}>
           <div style={{ color:'#64748b', fontSize:13 }}>{new Date(meta.created_at).toLocaleString()} · {meta.mimetype} · {(meta.size/1024).toFixed(1)} KB</div>
           {audioUrl && (
-            <div style={{ display:'flex', alignItems:'center', gap:8, color:'#64748b', fontSize:12 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, color:'#64748b', fontSize:12, flexWrap: isSmallScreen ? 'wrap' : 'nowrap' }}>
               <button onClick={async ()=>{
                 if (!gainOn) { setGainOn(true); setGainOpen(true); }
                 else { setGainOn(false); setGainOpen(false); disableGainPipeline(); /* keep graph alive */ }
@@ -1249,7 +1404,7 @@ export default function AnalysisDetail({ params }) {
               {gainOn && (
                 <>
                   <span>{t('GainLabel')}</span>
-                  <input className="vh-range" type="range" min={1} max={5} step={0.1} value={gainVal} onChange={e=> setGainVal(parseFloat(e.target.value)||1)} style={{ width:160 }} />
+                  <input className="vh-range" type="range" min={1} max={5} step={0.1} value={gainVal} onChange={e=> setGainVal(parseFloat(e.target.value)||1)} style={{ width: isSmallScreen ? 'min(160px, 60vw)' : 160 }} />
                   <span style={{ minWidth:38, textAlign:'right' }}>{gainVal.toFixed(1)}x</span>
                 </>
               )}
@@ -1374,7 +1529,7 @@ export default function AnalysisDetail({ params }) {
           </div>
           <div className={"vh-collapse "+(openClinical?"open":"closed")}>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns: twoColGrid, gap:12 }}>
             <div><b>{t('HeartRate')}:</b> {adv.hrBpm ? adv.hrBpm.toFixed(0) : '—'}</div>
             <div><b>{t('RRMean')}:</b> {adv.rrMeanSec?.toFixed?.(3) || '—'}</div>
             <div><b>{t('RRStd')}:</b> {adv.rrStdSec?.toFixed?.(3) || '—'}</div>
@@ -1413,7 +1568,7 @@ export default function AnalysisDetail({ params }) {
             </div>
           </div>
           <div className={"vh-collapse "+(openExtras?"open":"closed")}>
-          <div style={{ display: 'grid', gridTemplateColumns:'repeat(2, minmax(0,1fr))', gap:12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: twoColGrid, gap:12 }}>
             {/* Respiration & S2 split typing */}
             <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
               <div className="vh-sec-head" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:6 }}>
@@ -1525,7 +1680,7 @@ export default function AnalysisDetail({ params }) {
           </div>
           <div className={"vh-collapse "+(openFeatures?"open":"closed")}>
           <div style={{ background: '#f8fafc', padding: 16, borderRadius: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: twoColGrid, gap: 12 }}>
               {features && (
                 <>
                   <div><b>{t('Duration')}:</b> {features.durationSec?.toFixed?.(2)}</div>
@@ -1629,86 +1784,15 @@ export default function AnalysisDetail({ params }) {
       </div>
       </div>
       </div>
-      {canUseAccountFeatures && chatOpen && (
-        <div style={{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column', marginTop: 12, minWidth:300, maxWidth:420, alignSelf:'start', position:'sticky', top: navOffset, height: `calc(100vh - ${navOffset + 16}px)` }}>
-          <div style={{ padding:'10px 12px', borderBottom:'1px solid #e5e7eb', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
-            <div style={{ fontWeight:600, display:'flex', alignItems:'center', gap:8 }}>
-              <span>{t('AIConversation')}</span>
-              {me && (
-                <span style={{ display:'inline-flex', alignItems:'center', gap:6, color:'#64748b', fontWeight:400, fontSize:12 }}>
-                  {me.avatar_media_id ? (
-                    <img src={`${MEDIA_BASE}/file/${me.avatar_media_id}?v=${me.avatar_media_id}`} alt="me" width={16} height={16} style={{ width:16, height:16, borderRadius:9999, objectFit:'cover' }} />
-                  ) : (
-                    <span style={{ width:16, height:16, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:10 }}>
-                      {(me.display_name||me.email||'U').trim()[0]?.toUpperCase?.()||'U'}
-                    </span>
-                  )}
-                  <span>{me.display_name || me.email}</span>
-                </span>
-              )}
-            </div>
-            <button onClick={()=> setChatOpen(false)} className="vh-btn vh-btn-outline" style={{ padding:'4px 8px' }}>✕</button>
-          </div>
-          <div ref={chatScrollRef} style={{ flex:1, overflowY:'auto', padding:12, display:'flex', flexDirection:'column', gap:10 }}>
-            {chatMsgs.length===0 && (
-              <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
-                <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
-                <div style={{ maxWidth: 280, background:'#f1f5f9', color:'#0f172a', padding:'8px 10px', borderRadius:12, lineHeight:1.5 }}>
-                  <div style={{ whiteSpace:'pre-wrap' }}>
-                    {lang==='zh'
-                      ? '你好，我是智能心音助手。\n我可以基于本次分析结果，帮你解读报告、回答疑问，或给出复测与就医建议。\n请告诉我你的具体问题。'
-                      : "Hi! I'm your heart-sound assistant.\nI can interpret this analysis, answer questions, and suggest retesting or when to see a doctor.\nWhat would you like to know?"}
-                  </div>
-                </div>
-              </div>
-            )}
-            {chatMsgs.map((m, idx) => {
-              const isUser = m.role==='user';
-              return (
-                <div key={idx} style={{ display:'flex', gap:8, alignItems:'flex-start', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-                  {!isUser && (
-                    <div style={{ width:28, height:28, borderRadius:9999, background:'#0f172a', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>AI</div>
-                  )}
-                  <div style={{ maxWidth: 280, background: isUser ? '#111' : '#f1f5f9', color: isUser ? '#fff' : '#0f172a', padding:'8px 10px', borderRadius:12, lineHeight:1.5 }}>
-                    {isUser ? (
-                      <div style={{ whiteSpace:'pre-wrap' }}>{m.content}</div>
-                    ) : (
-                      <div dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content || '') }} />
-                    )}
-                    {(!m.content && !isUser && chatBusy) && (
-                      <div style={{ marginTop:6, color:'#64748b', fontSize:12 }}>
-                        <span>Thinking…</span>
-                      </div>
-                    )}
-                  </div>
-                  {isUser && (
-                    me?.avatar_media_id ? (
-                      <img src={`${MEDIA_BASE}/file/${me.avatar_media_id}?v=${me.avatar_media_id}`} alt="me" width={28} height={28} style={{ width:28, height:28, borderRadius:9999, objectFit:'cover', display:'block' }} />
-                    ) : (
-                      <div style={{ width:28, height:28, borderRadius:9999, background:'#111', color:'#fff', display:'grid', placeItems:'center', fontSize:12 }}>
-                        {(me?.display_name||me?.email||'U')?.trim?.()?.[0]?.toUpperCase?.() || 'U'}
-                      </div>
-                    )
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ padding:12, borderTop:'1px solid #e5e7eb' }}>
-            <form onSubmit={(e)=>{ e.preventDefault(); const v = e.target.elements.msg?.value?.trim(); if (!v || chatBusy) return; e.target.reset(); sendChat(v); }} style={{ display:'flex', gap:8 }}>
-              <input name="msg" placeholder={t('TypeMessage')} autoComplete="off" style={{ flex:1, padding:'8px 10px', border:'1px solid #e5e7eb', borderRadius:8 }} />
-              {!chatBusy ? (
-                <button type="submit" className="vh-btn vh-btn-primary">{t('Send')}</button>
-              ) : (
-                <button type="button" onClick={cancelChat} className="vh-btn vh-btn-stop" title={lang==='zh' ? '终止生成' : 'Stop generation'}>
-                  {lang==='zh' ? '■ 终止' : '■ Stop'}
-                </button>
-              )}
-            </form>
-            {chatErr && <div style={{ marginTop:6, color:'#b91c1c', fontSize:12 }}>{chatErr}</div>}
+        {!isSmallScreen && chatPanelNode}
+      </div>
+      {isSmallScreen && chatPanelNode && (
+        <div style={mobileChatBackdrop} onClick={()=>setChatOpen(false)}>
+          <div style={mobileChatInner} onClick={e=>e.stopPropagation()}>
+            {chatPanelNode}
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

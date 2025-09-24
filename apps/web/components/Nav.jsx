@@ -16,6 +16,8 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
   const [lang, setLang] = useState(initialLang); // 'en' | 'zh'
   const [mounted, setMounted] = useState(false);
   const menuRef = useRef(null);
+  const [isCompact, setIsCompact] = useState(false);
+  const [navLinksOpen, setNavLinksOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -50,6 +52,21 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
     return () => document.removeEventListener('click', onDoc);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handler = () => setIsCompact(mq.matches);
+    handler();
+    if (mq.addEventListener) mq.addEventListener('change', handler);
+    else if (mq.addListener) mq.addListener(handler);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', handler);
+      else if (mq.removeListener) mq.removeListener(handler);
+    };
+  }, []);
+
+  useEffect(() => { if (!isCompact) setNavLinksOpen(false); }, [isCompact]);
+
   // apply theme/lang to document + cookies
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -71,16 +88,68 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
   const isDark = theme === 'dark';
   const T = t;
 
+  const navStyle = {
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
+    background: isDark ? 'rgba(11,18,32,0.92)' : 'rgba(255,255,255,0.92)',
+    borderBottom: `1px solid ${isDark ? '#283548' : '#e5e7eb'}`,
+    boxShadow: isDark ? '0 1px 8px rgba(0,0,0,0.25)' : '0 1px 8px rgba(0,0,0,0.06)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: isCompact ? 'flex-start' : 'space-between',
+    gap: isCompact ? 12 : 16,
+    padding: isCompact ? '12px 16px' : '14px 24px',
+    flexWrap: isCompact ? 'wrap' : 'nowrap'
+  };
+
+  const leftWrapStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: isCompact ? 12 : 18,
+    flex: isCompact ? '1 1 100%' : '0 0 auto',
+    justifyContent: isCompact ? 'space-between' : 'flex-start',
+    width: isCompact ? '100%' : 'auto'
+  };
+
+  const actionsStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: isCompact ? 'wrap' : 'nowrap',
+    justifyContent: isCompact ? 'flex-end' : 'flex-start',
+    flex: isCompact ? '1 1 100%' : '0 0 auto'
+  };
+
+  const mobileLinksStyle = {
+    width: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    paddingTop: 8
+  };
+
   return (
-    <nav style={{ position: 'sticky', top: 0, zIndex: 10, background: isDark ? 'rgba(11,18,32,0.92)' : 'rgba(255,255,255,0.92)', borderBottom: `1px solid ${isDark ? '#283548' : '#e5e7eb'}`, boxShadow: isDark ? '0 1px 8px rgba(0,0,0,0.25)' : '0 1px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems:'center', justifyContent:'space-between', gap: 16, padding: '14px 24px' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:18 }}>
+    <nav style={navStyle}>
+      <div style={leftWrapStyle}>
         <Link href="/" style={{ fontWeight: 800, fontSize: 22, letterSpacing: '-0.02em', textDecoration: 'none', color: isDark ? '#f8fafc' : '#0f172a' }}>VisualHealth</Link>
-        <div style={{ display: 'flex', gap: 16 }}>
-          <Link href="/analysis" className="vh-nav-link">{T('Analysis')}</Link>
-          <Link href="/community" className="vh-nav-link">{T('Community')}</Link>
-        </div>
+        {isCompact ? (
+          <button
+            onClick={()=>setNavLinksOpen(v=>!v)}
+            aria-label={navLinksOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={navLinksOpen}
+            style={{ border:'1px solid #e5e7eb', background:isDark?'#0f172a':'#fff', color:isDark?'#e2e8f0':'#0f172a', borderRadius:10, padding:'6px 10px', display:'inline-flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d={navLinksOpen ? 'M5 5l14 14M19 5L5 19' : 'M4 7h16M4 12h16M4 17h16'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Link href="/analysis" className="vh-nav-link">{T('Analysis')}</Link>
+            <Link href="/community" className="vh-nav-link">{T('Community')}</Link>
+          </div>
+        )}
       </div>
-      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      <div style={actionsStyle}>
         {/* Lang toggle */}
         <button
           onClick={()=>setLang(l=> l==='en'?'zh':'en')}
@@ -129,6 +198,15 @@ export default function Nav({ initialLang = 'en', initialTheme = 'light' }) {
           </div>
         )}
       </div>
+      {isCompact && navLinksOpen && (
+        <div style={mobileLinksStyle}>
+          <Link href="/analysis" className="vh-nav-link" style={{ padding:'6px 0' }} onClick={()=>setNavLinksOpen(false)}>{T('Analysis')}</Link>
+          <Link href="/community" className="vh-nav-link" style={{ padding:'6px 0' }} onClick={()=>setNavLinksOpen(false)}>{T('Community')}</Link>
+          {!token && (
+            <Link href="/auth" className="vh-nav-link" style={{ padding:'6px 0' }} onClick={()=>setNavLinksOpen(false)}>{T('Login')}</Link>
+          )}
+        </div>
+      )}
       {/* Theme styles are in app/globals.css */}
     </nav>
   );

@@ -51,6 +51,105 @@ export default function AnalysisDetail({ params }) {
   const guestAssetsRef = useRef({ audio:null, spec:null });
   const guestHsmmRef = useRef(null);
   const specRequestRef = useRef({ key:'', width:0, inFlight:false });
+  const serverSpecRef = useRef({ running:false });
+
+  const requestServerAnalysis = useCallback(async ({ ensureSpec = true, ensureAdv = true } = {}) => {
+    if (!meta?.media_id || !token) return;
+    if (serverSpecRef.current.running) return;
+    serverSpecRef.current.running = true;
+    try {
+      setLoading(s => ({ ...s, spec: ensureSpec || s.spec, adv: ensureAdv || s.adv }));
+      const tasks = [];
+      let patchedSpecId = null;
+      let patchedAdv = null;
+
+      if (ensureSpec) {
+        tasks.push((async () => {
+          try {
+            const resp = await fetch(VIZ_BASE + '/spectrogram_media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ mediaId: meta.media_id, maxFreq: 2000, width: 1200, height: 320 })
+            });
+            if (!resp.ok) return;
+            const imgBlob = await resp.blob();
+            setSpecUrl(prev => {
+              if (prev) revokeObjectUrl(prev);
+              return URL.createObjectURL(imgBlob);
+            });
+            try {
+              const fd = new FormData();
+              fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
+              const up = await fetch(API.media + '/upload', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: fd
+              });
+              const j = await up.json();
+              if (j?.id) patchedSpecId = j.id;
+            } catch (errUp) {
+              console.warn('spectrogram media upload failed', errUp);
+            }
+          } catch (err) {
+            console.warn('spectrogram_media failed', err);
+          }
+        })());
+      }
+
+      if (ensureAdv) {
+        tasks.push((async () => {
+          try {
+            let passQuality = true;
+            try {
+              const qr = await fetch(VIZ_BASE + '/pcg_quality_media', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ mediaId: meta.media_id })
+              });
+              if (qr.ok) {
+                const qj = await qr.json();
+                setQuality(qj);
+                passQuality = !!(qj?.isHeart && qj?.qualityOk);
+              }
+            } catch {}
+            if (!passQuality) return;
+            const advResp = await fetch(VIZ_BASE + '/pcg_advanced_media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ mediaId: meta.media_id, useHsmm, hash: audioHash })
+            });
+            if (!advResp.ok) return;
+            const data = await advResp.json();
+            patchedAdv = data;
+            setAdv(data);
+          } catch (err) {
+            console.warn('pcg_advanced_media failed', err);
+          }
+        })());
+      }
+
+      await Promise.all(tasks);
+
+      if (patchedSpecId || patchedAdv) {
+        try {
+          await fetch(ANALYSIS_BASE + `/records/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              ...(patchedAdv ? { adv: patchedAdv } : {}),
+              ...(patchedSpecId ? { specMediaId: patchedSpecId } : {}),
+              audioHash
+            })
+          });
+        } catch (errPatch) {
+          console.warn('record patch after media analysis failed', errPatch);
+        }
+      }
+    } finally {
+      serverSpecRef.current.running = false;
+      setLoading(s => ({ ...s, spec: false, adv: false }));
+    }
+  }, [meta, token, ANALYSIS_BASE, id, useHsmm, audioHash]);
   const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
   const [progress, setProgress] = useState(0);
   const [audioError, setAudioError] = useState(null);
@@ -994,32 +1093,31 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => {
     if (!token || isGuest) return;
     if (!meta) return;
-    if (meta.spec_media_id && specUrl) return;
-    if (!payloadForRequest) return;
     if (!audioHash) return;
+
+    const ensureSpec = !meta?.spec_media_id;
+    const ensureAdv = !meta?.adv;
 
     const measuredWidth = Math.floor(contentWidth || 0);
     const lastWidth = specRequestRef.current.width || 0;
-    const hasSpec = !!specUrl;
-
     const widthCandidate = measuredWidth > 0 ? measuredWidth : lastWidth || 0;
     const width = Math.max(320, Math.min(1200, widthCandidate || 640));
-    if (!width) return;
-
-    const diff = Math.abs(width - lastWidth);
-    if (hasSpec && diff < 48) return;
-
     const key = `${audioHash}_${width}`;
+
+    if (!payloadForRequest) {
+      requestServerAnalysis({ ensureSpec, ensureAdv });
+      return;
+    }
+
     if (specRequestRef.current.inFlight && specRequestRef.current.key === key) return;
 
-    const hasAdvData = !!adv || !!meta.adv;
-    const steps = (hasAdvData ? 0 : 1) + 1;
-    const per = steps > 0 ? (1 / steps) : 1;
+    const hasSpec = !!specUrl;
+    const diff = Math.abs(width - lastWidth);
+    if (hasSpec && diff < 48) return;
 
     specRequestRef.current = { key, width, inFlight: true };
     setLoading(s => ({ ...s, spec: true }));
     let cancelled = false;
-
     const payload = { ...payloadForRequest };
 
     (async () => {
@@ -1046,16 +1144,7 @@ export default function AnalysisDetail({ params }) {
             const total = parseFloat(resp.headers.get('x-compute-time') || '');
             const stft = parseFloat(resp.headers.get('x-stft-time') || '');
             const plot = parseFloat(resp.headers.get('x-plot-time') || '');
-            console.info(
-              '[spec] reqMs',
-              (tReq1 - tReq0).toFixed(1),
-              'serverMs',
-              isNaN(total) ? '—' : total.toFixed(1),
-              'stftMs',
-              isNaN(stft) ? '—' : stft.toFixed(1),
-              'plotMs',
-              isNaN(plot) ? '—' : plot.toFixed(1)
-            );
+            console.info('[spec] reqMs', (tReq1 - tReq0).toFixed(1), 'serverMs', isNaN(total) ? '—' : total.toFixed(1), 'stftMs', isNaN(stft) ? '—' : stft.toFixed(1), 'plotMs', isNaN(plot) ? '—' : plot.toFixed(1));
           } catch {}
           (async () => {
             try {
@@ -1076,14 +1165,14 @@ export default function AnalysisDetail({ params }) {
               }
             } catch {}
           })();
+        } else {
+          await requestServerAnalysis({ ensureSpec: true, ensureAdv });
         }
       } catch (err) {
-        if (!cancelled) console.warn('spec recompute failed', err);
+        console.warn('spec recompute failed', err);
+        await requestServerAnalysis({ ensureSpec: true, ensureAdv });
       } finally {
-        if (!cancelled) {
-          setLoading(s => ({ ...s, spec: false }));
-          if (per > 0) setProgress(p => Math.min(1, p + per));
-        }
+        if (!cancelled) setLoading(s => ({ ...s, spec: false }));
         specRequestRef.current = { key, width, inFlight: false };
       }
     })();
@@ -1096,7 +1185,7 @@ export default function AnalysisDetail({ params }) {
         inFlight: false
       };
     };
-  }, [token, isGuest, meta, payloadForRequest, contentWidth, audioHash, specUrl, adv, id]);
+  }, [token, isGuest, meta, payloadForRequest, contentWidth, audioHash, specUrl, requestServerAnalysis]);
 
   // 不再自动调用后端 ai_start 进行计算；如需自动生成，可在此直接调用 LLM 服务
   // Init WaveSurfer once the audio metadata is available so MediaElement backend has duration info

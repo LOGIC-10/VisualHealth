@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '../../components/i18n';
@@ -38,6 +38,81 @@ export default function AnalysisListPage() {
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' or 'asc'
+
+  const requestServerAnalysis = useCallback(async ({ mediaId, recordId, ensureSpec = true, ensureAdv = true } = {}) => {
+    if (!token || !mediaId) return;
+    let specId = null;
+    let advData = null;
+    try {
+      if (ensureSpec) {
+        try {
+          const resp = await fetch(VIZ_BASE + '/spectrogram_media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ mediaId, maxFreq: 2000, width: 1200, height: 320 })
+          });
+          if (resp.ok) {
+            const imgBlob = await resp.blob();
+            const fd = new FormData();
+            fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
+            try {
+              const up = await fetch(MEDIA_BASE + '/upload', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+              const j = await up.json();
+              if (j?.id) specId = j.id;
+            } catch (errUp) {
+              console.warn('healing spectrogram upload failed', errUp);
+            }
+          }
+        } catch (err) {
+          console.warn('healing spectrogram_media failed', err);
+        }
+      }
+
+      if (ensureAdv) {
+        try {
+          let passQuality = true;
+          try {
+            const qr = await fetch(VIZ_BASE + '/pcg_quality_media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ mediaId })
+            });
+            if (qr.ok) {
+              const qj = await qr.json();
+              passQuality = !!(qj?.isHeart && qj?.qualityOk);
+            }
+          } catch {}
+          if (passQuality) {
+            const advResp = await fetch(VIZ_BASE + '/pcg_advanced_media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ mediaId })
+            });
+            if (advResp.ok) {
+              advData = await advResp.json();
+            }
+          }
+        } catch (err) {
+          console.warn('healing pcg_advanced_media failed', err);
+        }
+      }
+
+      if (recordId && (specId || advData)) {
+        try {
+          await fetch(ANALYSIS_BASE + `/records/${recordId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              ...(specId ? { specMediaId: specId } : {}),
+              ...(advData ? { adv: advData } : {})
+            })
+          });
+        } catch (errPatch) {
+          console.warn('healing record patch failed', errPatch);
+        }
+      }
+    } catch {}
+  }, [token]);
   const [useHsmm, setUseHsmm] = useState(false);
   const [guestUploadErr, setGuestUploadErr] = useState('');
   const [guestProcessing, setGuestProcessing] = useState(false);
@@ -141,7 +216,11 @@ export default function AnalysisListPage() {
               if (!r.ok) return;
               const blob = await r.blob(); arr = await blob.arrayBuffer();
             }
-            const dec = await decodeDownsample(arr); if (!dec) return;
+            const dec = await decodeDownsample(arr);
+            if (!dec) {
+              await requestServerAnalysis({ mediaId: item.media_id, recordId: item.id, ensureSpec: !item.has_spec, ensureAdv: !item.has_adv });
+              return;
+            }
             const { payload } = dec;
             let passQuality = true;
             try {
@@ -154,6 +233,7 @@ export default function AnalysisListPage() {
               item.has_spec ? Promise.resolve({ ok: false }) : fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
             ]);
             let adv = null; let specId = null;
+            const expectedAdv = passQuality && !item.has_adv;
             if (advResp && advResp.ok) { try { adv = await advResp.json(); } catch {} }
             if (specResp && specResp.ok) {
               try {
@@ -162,6 +242,12 @@ export default function AnalysisListPage() {
                 const up = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
                 const j = await up.json(); if (j?.id) specId = j.id;
               } catch {}
+            }
+            if ((!specResp || !specResp.ok) && !item.has_spec) {
+              await requestServerAnalysis({ mediaId: item.media_id, recordId: item.id, ensureSpec: true, ensureAdv: false });
+            }
+            if ((!advResp || !advResp.ok) && expectedAdv) {
+              await requestServerAnalysis({ mediaId: item.media_id, recordId: item.id, ensureSpec: false, ensureAdv: true });
             }
             if (!cancelled && (adv || specId)) {
               await fetch(ANALYSIS_BASE + `/records/${item.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: adv || undefined, specMediaId: specId || undefined }) });

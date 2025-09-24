@@ -50,6 +50,7 @@ export default function AnalysisDetail({ params }) {
   const [audioHash, setAudioHash] = useState(null);
   const guestAssetsRef = useRef({ audio:null, spec:null });
   const guestHsmmRef = useRef(null);
+  const specRequestRef = useRef({ key:'', width:0, inFlight:false });
   const [loading, setLoading] = useState({ decode: false, extra: false, adv: false, spec: false });
   const [progress, setProgress] = useState(0);
   const [audioError, setAudioError] = useState(null);
@@ -903,13 +904,14 @@ export default function AnalysisDetail({ params }) {
       // compute extra features once (off-UI path)
       try {
         // Only show progress for modules that are not yet stored (adv/spec)
+        const hasSpecUrl = !!specUrl;
         const needAdv = !(meta && meta.adv);
-        const needSpec = !(meta && meta.spec_media_id);
+        const needSpec = !(meta && meta.spec_media_id) && !hasSpecUrl;
         const steps = (needAdv ? 1 : 0) + (needSpec ? 1 : 0);
         const per = steps > 0 ? (1 / steps) : 0;
 
         // Initialize loading flags: do not surface decode/extra in progress bar
-        setLoading(s=>({ ...s, decode:false, extra:false, adv:needAdv, spec:needSpec }));
+        setLoading(s=>({ ...s, decode:false, extra:false, adv:needAdv }));
         setProgress(0);
         const arr = await blob.arrayBuffer();
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -963,41 +965,113 @@ export default function AnalysisDetail({ params }) {
           } catch {}
           setLoading(s=>({ ...s, adv:false })); if (per>0) setProgress(p=>p+per);
         })();
-        const widthBase = Math.floor(contentWidth || 0);
-        if (!widthBase) return;
-        const width = Math.max(320, Math.min(1200, widthBase));
-        needSpec && void (async ()=>{
-          const tReq0 = performance.now();
-          const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...payload, hash: audioHash, maxFreq:2000, width, height: 320 }) });
-          const tReq1 = performance.now();
-          if (resp.ok) {
-            const imgBlob = await resp.blob();
-            setSpecUrl(URL.createObjectURL(imgBlob));
-            // console-only timings
-            try {
-              const total = parseFloat(resp.headers.get('x-compute-time')||'');
-              const stft = parseFloat(resp.headers.get('x-stft-time')||'');
-              const plot = parseFloat(resp.headers.get('x-plot-time')||'');
-              console.info('[spec] reqMs', (tReq1-tReq0).toFixed(1), 'serverMs', isNaN(total)?'—':total.toFixed(1), 'stftMs', isNaN(stft)?'—':stft.toFixed(1), 'plotMs', isNaN(plot)?'—':plot.toFixed(1));
-            } catch {}
-            // cache spectrogram into media and patch record (async; don't block render)
-            (async () => {
-              try {
-                const fd = new FormData();
-                fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
-                const up = await fetch(API.media + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
-                const j = await up.json();
-                if (j?.id) {
-                  await fetch(ANALYSIS_BASE + `/records/${id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ specMediaId: j.id, audioHash }) });
-                }
-              } catch {}
-            })();
-          }
-          setLoading(s=>({ ...s, spec:false })); if (per>0) setProgress(p=>p+per);
-        })();
       } catch {}
     })();
   }, [meta, token]);
+
+  useEffect(() => {
+    if (!token || isGuest) return;
+    if (!meta) return;
+    if (meta.spec_media_id) return;
+    if (!payloadForRequest) return;
+    if (!audioHash) return;
+
+    const measuredWidth = Math.floor(contentWidth || 0);
+    const lastWidth = specRequestRef.current.width || 0;
+    const hasSpec = !!specUrl;
+
+    if (!hasSpec && measuredWidth <= 0) return;
+
+    const widthCandidate = measuredWidth > 0 ? measuredWidth : lastWidth || 0;
+    const width = Math.max(320, Math.min(1200, widthCandidate || 640));
+    if (!width) return;
+
+    const diff = Math.abs(width - lastWidth);
+    if (hasSpec && diff < 48) return;
+
+    const key = `${audioHash}_${width}`;
+    if (specRequestRef.current.inFlight && specRequestRef.current.key === key) return;
+
+    const hasAdvData = !!adv || !!meta.adv;
+    const steps = (hasAdvData ? 0 : 1) + 1;
+    const per = steps > 0 ? (1 / steps) : 1;
+
+    specRequestRef.current = { key, width, inFlight: true };
+    setLoading(s => ({ ...s, spec: true }));
+    let cancelled = false;
+
+    const payload = { ...payloadForRequest };
+
+    (async () => {
+      const tReq0 = performance.now();
+      try {
+        const resp = await fetch(VIZ_BASE + '/spectrogram_pcm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ ...payload, hash: audioHash, maxFreq: 2000, width, height: 320 })
+        });
+        const tReq1 = performance.now();
+        if (cancelled) return;
+        if (resp.ok) {
+          const imgBlob = await resp.blob();
+          if (cancelled) return;
+          setSpecUrl(prev => {
+            if (prev) revokeObjectUrl(prev);
+            return URL.createObjectURL(imgBlob);
+          });
+          try {
+            const total = parseFloat(resp.headers.get('x-compute-time') || '');
+            const stft = parseFloat(resp.headers.get('x-stft-time') || '');
+            const plot = parseFloat(resp.headers.get('x-plot-time') || '');
+            console.info(
+              '[spec] reqMs',
+              (tReq1 - tReq0).toFixed(1),
+              'serverMs',
+              isNaN(total) ? '—' : total.toFixed(1),
+              'stftMs',
+              isNaN(stft) ? '—' : stft.toFixed(1),
+              'plotMs',
+              isNaN(plot) ? '—' : plot.toFixed(1)
+            );
+          } catch {}
+          (async () => {
+            try {
+              const fd = new FormData();
+              fd.append('file', new File([imgBlob], 'spectrogram.png', { type: 'image/png' }));
+              const up = await fetch(API.media + '/upload', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: fd
+              });
+              const j = await up.json();
+              if (j?.id) {
+                await fetch(ANALYSIS_BASE + `/records/${id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify({ specMediaId: j.id, audioHash })
+                });
+              }
+            } catch {}
+          })();
+        }
+      } catch (err) {
+        if (!cancelled) console.warn('spec recompute failed', err);
+      } finally {
+        if (!cancelled) {
+          setLoading(s => ({ ...s, spec: false }));
+          if (per > 0) setProgress(p => Math.min(1, p + per));
+        }
+        specRequestRef.current = { key, width, inFlight: false };
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, isGuest, meta, payloadForRequest, contentWidth, audioHash, specUrl, adv, id]);
 
   // 不再自动调用后端 ai_start 进行计算；如需自动生成，可在此直接调用 LLM 服务
   // Init WaveSurfer once the audio metadata is available so MediaElement backend has duration info

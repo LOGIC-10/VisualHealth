@@ -155,15 +155,32 @@ export default function HomePage() {
   function pickFiles(){ fileInputRef.current?.click(); }
 
   async function computeFeatures(file){
-    const srTarget = 8000; const arrayBuffer = await file.arrayBuffer();
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const buf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-    const ch = buf.getChannelData(0);
-    const ratio = Math.max(1, Math.floor(buf.sampleRate / srTarget));
-    const ds = new Float32Array(Math.ceil(ch.length / ratio));
-    for (let i=0;i<ds.length;i++) ds[i] = ch[i*ratio] || 0;
-    const resp = await fetch(ANALYSIS_BASE + '/analyze', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ sampleRate: Math.round(buf.sampleRate/ratio), pcm: Array.from(ds) }) });
-    return await resp.json();
+    let audioCtx = null;
+    try {
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtor) throw new Error('AudioContextUnavailable');
+      const arrayBuffer = await file.arrayBuffer();
+      audioCtx = new AudioCtor();
+      const buf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+      const srTarget = 8000;
+      const ch = buf.getChannelData(0);
+      const ratio = Math.max(1, Math.floor(buf.sampleRate / srTarget));
+      const ds = new Float32Array(Math.ceil(ch.length / ratio));
+      for (let i=0;i<ds.length;i++) ds[i] = ch[i*ratio] || 0;
+      const sampleRate = Math.round(buf.sampleRate / ratio);
+      const payload = { sampleRate, pcm: Array.from(ds) };
+      const resp = await fetch(ANALYSIS_BASE + '/analyze', {
+        method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error('analyze_failed');
+      const json = await resp.json();
+      return { features: json, payload };
+    } catch (err) {
+      console.warn('home computeFeatures fallback', err);
+      return { features: null, payload: null };
+    } finally {
+      try { await audioCtx?.close?.(); } catch {}
+    }
   }
 
   async function onFiles(e){
@@ -173,10 +190,25 @@ export default function HomePage() {
     for (let i=0;i<fl.length;i++){
       try{
         const f = fl[i];
-        const features = await computeFeatures(f);
+        const prep = await computeFeatures(f);
         const fd = new FormData(); fd.append('file', f);
         const up = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
         const meta = await up.json(); if(!meta?.id) throw new Error('upload failed');
+        let features = prep.features;
+        if (!features) {
+          try {
+            const resp = await fetch(VIZ_BASE + '/features_media', {
+              method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+              body: JSON.stringify({ mediaId: meta.id })
+            });
+            if (resp.ok) {
+              features = await resp.json();
+            }
+          } catch (err) {
+            console.warn('home features_media fallback failed', err);
+          }
+        }
+        if (!features) features = { fallback: true };
         await fetch(ANALYSIS_BASE + '/records', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features }) });
       }catch(err){ console.warn('create failed', err); }
       setProgress(p=>({ ...p, done: p.done+1 }));

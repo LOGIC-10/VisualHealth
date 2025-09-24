@@ -310,20 +310,33 @@ export default function AnalysisListPage() {
   }
 
   async function computeFeatures(file){
-    const arrayBuffer = await file.arrayBuffer();
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const audioBuf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-    const channel = audioBuf.getChannelData(0);
-    const targetSR = 8000;
-    const ratio = Math.max(1, Math.floor(audioBuf.sampleRate / targetSR));
-    const ds = new Float32Array(Math.ceil(channel.length / ratio));
-    for (let i = 0; i < ds.length; i++) ds[i] = channel[i * ratio] || 0;
-    const resp = await fetch(ANALYSIS_BASE + '/analyze', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) })
-    });
-    const json = await resp.json();
-    return { features: json, payload: { sampleRate: Math.round(audioBuf.sampleRate / ratio), pcm: Array.from(ds) } };
+    let audioCtx = null;
+    try {
+      const AudioCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtor) throw new Error('AudioContextUnavailable');
+      const arrayBuffer = await file.arrayBuffer();
+      audioCtx = new AudioCtor();
+      const audioBuf = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+      const channel = audioBuf.getChannelData(0);
+      const targetSR = 8000;
+      const ratio = Math.max(1, Math.floor(audioBuf.sampleRate / targetSR));
+      const ds = new Float32Array(Math.ceil(channel.length / ratio));
+      for (let i = 0; i < ds.length; i++) ds[i] = channel[i * ratio] || 0;
+      const sampleRate = Math.round(audioBuf.sampleRate / ratio);
+      const payload = { sampleRate, pcm: Array.from(ds) };
+      const resp = await fetch(ANALYSIS_BASE + '/analyze', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error('analyze_failed');
+      const json = await resp.json();
+      return { features: json, payload, mode: 'local' };
+    } catch (err) {
+      console.warn('computeFeatures local fallback', err);
+      return { features: null, payload: null, mode: 'remote', error: err };
+    } finally {
+      try { await audioCtx?.close?.(); } catch {}
+    }
   }
 
   async function onFiles(e){
@@ -335,36 +348,105 @@ export default function AnalysisListPage() {
     for (let idx = 0; idx < fl.length; idx++){
       const f = fl[idx];
       try {
-        const { features, payload } = await computeFeatures(f);
+        const prep = await computeFeatures(f);
         const fd = new FormData(); fd.append('file', f);
         const up = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
         const meta = await up.json();
         if (!meta?.id) throw new Error('upload failed');
+
+        let features = prep.features;
+        if (!features) {
+          try {
+            const resp = await fetch(VIZ_BASE + '/features_media', {
+              method:'POST',
+              headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+              body: JSON.stringify({ mediaId: meta.id })
+            });
+            if (resp.ok) {
+              features = await resp.json();
+            }
+          } catch (err) {
+            console.warn('features_media fallback failed', err);
+          }
+        }
+        if (!features) {
+          features = { fallback: true };
+        }
+
         const rec = await fetch(ANALYSIS_BASE + '/records', {
           method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
           body: JSON.stringify({ mediaId: meta.id, filename: meta.filename, mimetype: meta.mimetype, size: meta.size, features })
         });
         const saved = await rec.json();
         if (saved?.id && !firstId) firstId = saved.id;
+
+        const payload = prep.payload;
         // cache adv/spec in background (do not await)
         (async ()=>{
           try {
-            const [advResp, specResp] = await Promise.all([
-              fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
-              fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
-            ]);
-            let specId = null; let adv = null;
-            if (specResp.ok) {
-              const imgBlob = await specResp.blob(); const fdu = new FormData();
-              fdu.append('file', new File([imgBlob], 'spectrogram.png', { type:'image/png' }));
-              const up2 = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
-              const j2 = await up2.json(); if (j2?.id) specId = j2.id;
+            if (payload) {
+              const [advResp, specResp] = await Promise.all([
+                fetch(VIZ_BASE + '/pcg_advanced', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, useHsmm }) }),
+                fetch(VIZ_BASE + '/spectrogram_pcm', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ...payload, maxFreq:2000, width:1200, height:320 }) })
+              ]);
+              let specId = null; let adv = null;
+              if (specResp.ok) {
+                const imgBlob = await specResp.blob(); const fdu = new FormData();
+                fdu.append('file', new File([imgBlob], 'spectrogram.png', { type:'image/png' }));
+                const up2 = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
+                const j2 = await up2.json(); if (j2?.id) specId = j2.id;
+              }
+              if (advResp.ok) adv = await advResp.json();
+              if (saved?.id && (adv || specId)){
+                await fetch(ANALYSIS_BASE + `/records/${saved.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: adv || null, specMediaId: specId || null }) });
+              }
+            } else if (saved?.id) {
+              let passQuality = true;
+              try {
+                const qr = await fetch(VIZ_BASE + '/pcg_quality_media', {
+                  method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ mediaId: meta.id })
+                });
+                if (qr.ok) {
+                  const qj = await qr.json();
+                  passQuality = !!(qj?.isHeart && qj?.qualityOk);
+                }
+              } catch {}
+              const [advResp, specResp] = await Promise.all([
+                passQuality ? fetch(VIZ_BASE + '/pcg_advanced_media', {
+                  method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ mediaId: meta.id, useHsmm })
+                }) : Promise.resolve({ ok: false }),
+                fetch(VIZ_BASE + '/spectrogram_media', {
+                  method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ mediaId: meta.id, maxFreq:2000, width:1200, height:320 })
+                })
+              ]);
+              let specId = null; let adv = null;
+              if (specResp && specResp.ok) {
+                try {
+                  const imgBlob = await specResp.blob();
+                  const fdu = new FormData();
+                  fdu.append('file', new File([imgBlob], 'spectrogram.png', { type:'image/png' }));
+                  const up2 = await fetch(MEDIA_BASE + '/upload', { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fdu });
+                  const j2 = await up2.json(); if (j2?.id) specId = j2.id;
+                } catch (err) {
+                  console.warn('spectrogram_media cache failed', err);
+                }
+              }
+              if (advResp && advResp.ok) {
+                try { adv = await advResp.json(); } catch {}
+              }
+              if (saved?.id && (adv || specId)) {
+                await fetch(ANALYSIS_BASE + `/records/${saved.id}`, {
+                  method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                  body: JSON.stringify({ adv: adv || null, specMediaId: specId || null })
+                });
+              }
             }
-            if (advResp.ok) adv = await advResp.json();
-            if (saved?.id && (adv || specId)){
-              await fetch(ANALYSIS_BASE + `/records/${saved.id}`, { method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` }, body: JSON.stringify({ adv: adv || null, specMediaId: specId || null }) });
-            }
-          } catch {}
+          } catch (err) {
+            console.warn('post-upload enrichment failed', err);
+          }
         })();
       } catch (err) { console.warn('create failed', err); }
       setProgress(p => ({ ...p, done: p.done + 1 }));

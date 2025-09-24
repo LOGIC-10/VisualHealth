@@ -120,6 +120,11 @@ export default function AnalyzePage() {
                 body: JSON.stringify({ adv: result.adv || null, specMediaId: specId || null })
               });
             }
+            try {
+              if (saved?.id && result?.specBase64) {
+                sessionStorage.setItem(`vh_prefetch_spec_${saved.id}`, result.specBase64);
+              }
+            } catch {}
           } catch (err) {
             console.warn('persist patch failed', err);
           }

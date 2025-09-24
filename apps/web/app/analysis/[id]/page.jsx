@@ -544,6 +544,27 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => { try { setToken(localStorage.getItem('vh_token')); } catch {} }, []);
 
   useEffect(() => {
+    if (isGuest) return;
+    if (!id) return;
+    try {
+      const key = `vh_prefetch_spec_${id}`;
+      const b64 = sessionStorage.getItem(key);
+      if (b64) {
+        const blob = base64ToBlob(b64, 'image/png');
+        if (blob) {
+          setSpecUrl(prev => {
+            if (prev) revokeObjectUrl(prev);
+            return URL.createObjectURL(blob);
+          });
+        }
+        sessionStorage.removeItem(key);
+      }
+    } catch (err) {
+      try { console.warn('prefetch spec restore failed', err); } catch {}
+    }
+  }, [id, isGuest]);
+
+  useEffect(() => {
     if (!isGuest) return;
     let cancelled = false;
     (async () => {
@@ -776,6 +797,7 @@ export default function AnalysisDetail({ params }) {
         try {
           const fr = await fetch(MEDIA_BASE + `/file/${rec.spec_media_id}`, { headers: { Authorization: `Bearer ${token}` } });
           if (fr.ok) { const b = await fr.blob(); setSpecUrl(URL.createObjectURL(b)); }
+          else try { console.warn('[spec] media fetch failed', rec.spec_media_id, fr.status); } catch {}
         } catch {}
       }
     })();
@@ -972,15 +994,13 @@ export default function AnalysisDetail({ params }) {
   useEffect(() => {
     if (!token || isGuest) return;
     if (!meta) return;
-    if (meta.spec_media_id) return;
+    if (meta.spec_media_id && specUrl) return;
     if (!payloadForRequest) return;
     if (!audioHash) return;
 
     const measuredWidth = Math.floor(contentWidth || 0);
     const lastWidth = specRequestRef.current.width || 0;
     const hasSpec = !!specUrl;
-
-    if (!hasSpec && measuredWidth <= 0) return;
 
     const widthCandidate = measuredWidth > 0 ? measuredWidth : lastWidth || 0;
     const width = Math.max(320, Math.min(1200, widthCandidate || 640));
@@ -1070,6 +1090,11 @@ export default function AnalysisDetail({ params }) {
 
     return () => {
       cancelled = true;
+      specRequestRef.current = {
+        key: specRequestRef.current.key,
+        width: specRequestRef.current.width,
+        inFlight: false
+      };
     };
   }, [token, isGuest, meta, payloadForRequest, contentWidth, audioHash, specUrl, adv, id]);
 

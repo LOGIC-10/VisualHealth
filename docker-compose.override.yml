@@ -8,6 +8,7 @@ services:
       - ./apps/web:/app
       - web_node_modules:/app/node_modules
     environment:
+      - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - WATCHPACK_POLLING_INTERVAL=500
       - CHOKIDAR_USEPOLLING=true

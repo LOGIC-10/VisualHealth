@@ -1566,12 +1566,15 @@ export default function AnalysisDetail({ params }) {
         .vh-range::-moz-range-thumb{ width:14px; height:14px; border:none; border-radius:9999px; background:#94a3b8; }
       `}</style>
       <style>{`
-        .vh-arrow{ opacity:0; transition: opacity 120ms ease, transform 120ms ease; cursor:pointer; pointer-events:none; display:inline-flex; }
-        .vh-sec-head:hover .vh-arrow{ opacity:1; pointer-events:auto; }
+        .vh-arrow{ opacity:1; transition: opacity 120ms ease, transform 120ms ease; cursor:pointer; pointer-events:auto; display:inline-flex; }
         .vh-rot{ transform: rotate(90deg); }
         .vh-collapse{ overflow:hidden; transition:max-height 200ms ease, opacity 200ms ease; opacity:1; }
         .vh-collapse.closed{ max-height:0; opacity:0; pointer-events:none; }
         .vh-collapse.open{ max-height:4000px; opacity:1; }
+        @media (hover: hover) and (pointer: fine) {
+          .vh-arrow{ opacity:0; pointer-events:none; }
+          .vh-sec-head:hover .vh-arrow{ opacity:1; pointer-events:auto; }
+        }
       `}</style>
 
       {/* Clinical PCG Analysis */}

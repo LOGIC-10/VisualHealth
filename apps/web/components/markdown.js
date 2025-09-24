@@ -1,5 +1,3 @@
-"use client";
-
 // Minimal Markdown renderer for headings, bold/italic, lists and code blocks.
 // It escapes HTML first to avoid injection, then applies simple replacements.
 export function renderMarkdown(md) {
@@ -93,4 +91,3 @@ export function renderMarkdown(md) {
 
   return html;
 }
-

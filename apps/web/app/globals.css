@@ -109,6 +109,13 @@ a { color: inherit; }
 }
 .vh-btn-link:hover { text-decoration: underline; filter: none; }
 
+@media (hover: none) {
+  .vh-arrow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 /* Nav links */
 .vh-nav-link {
   text-decoration: none;

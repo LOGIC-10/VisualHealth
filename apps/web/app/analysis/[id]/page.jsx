@@ -164,6 +164,9 @@ export default function AnalysisDetail({ params }) {
   const [aiText, setAiText] = useState('');
   const [aiErr, setAiErr] = useState('');
   const [aiSubmitted, setAiSubmitted] = useState(false);
+  const aiAbortRef = useRef(null);
+  const aiAccumRef = useRef('');
+  const aiModelRef = useRef('llm');
   const [pcmPayload, setPcmPayload] = useState(null);
   const payloadForRequest = useMemo(() => {
     if (!pcmPayload) return null;
@@ -637,6 +640,12 @@ export default function AnalysisDetail({ params }) {
   function cancelChat(){
     try { chatAbortRef.current?.abort(); } catch {}
   }
+
+  useEffect(() => {
+    return () => {
+      try { aiAbortRef.current?.abort?.(); } catch {}
+    };
+  }, []);
 
   // Auto-scroll to the latest message/content
   useEffect(() => {
@@ -1994,38 +2003,147 @@ export default function AnalysisDetail({ params }) {
       <div style={{ background:'#f8fafc', padding:16, borderRadius:12 }}>
         {!aiText && canUseAccountFeatures && (
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-          <button disabled={aiBusy} onClick={async ()=>{
-            setAiBusy(true); setAiErr('');
-            try{
-              const sys = lang==='zh'
+          <button disabled={aiBusy} onClick={async () => {
+            if (aiBusy) return;
+            try { aiAbortRef.current?.abort?.(); } catch {}
+            setAiBusy(true);
+            setAiErr('');
+            aiAccumRef.current = '';
+            aiModelRef.current = 'llm';
+            setAiText('');
+            try {
+              const sys = lang === 'zh'
                 ? '你是一名心血管科医生助手。请基于提供的“临床级PCG指标”和“基础特征”生成一份简洁、可信、可执行的报告，包含：结论、证据与解释、建议（不少于3条，避免夸张医疗承诺）。不要杜撰未给出的测量值。'
                 : 'You are a cardiology assistant. Using the provided clinical PCG metrics and basic features, produce a concise, reliable, actionable report with: Conclusion, Evidence & Interpretation, and 3+ concrete Advice items. Do not fabricate measurements not provided.';
               const ctx = [];
-              try { if (adv) ctx.push('clinical_pcg:\n```json\n'+JSON.stringify(adv)+'\n```'); } catch {}
-              try { if (features) ctx.push('features:\n```json\n'+JSON.stringify(features)+'\n```'); } catch {}
+              try { if (adv) ctx.push('clinical_pcg:\n```json\n' + JSON.stringify(adv) + '\n```'); } catch {}
+              try { if (features) ctx.push('features:\n```json\n' + JSON.stringify(features) + '\n```'); } catch {}
               const messages = [
                 { role: 'system', content: sys },
-                { role: 'user', content: (lang==='zh'?'以下是分析指标：\n':'Here are the analysis metrics:\n') + ctx.join('\n\n') }
+                { role: 'user', content: (lang === 'zh' ? '以下是分析指标：\n' : 'Here are the analysis metrics:\n') + ctx.join('\n\n') }
               ];
-              const resp = await fetch(LLM_BASE + '/chat', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ messages, temperature: 0.2 }) });
-              const j = await resp.json().catch(()=>({}));
-              if (!resp.ok || j?.error) throw new Error(j?.error || 'chat failed');
-              const text = j?.text || '';
-              setAiText(text);
-              // Persist to analysis record for this language
-              const ts = new Date().toISOString();
-              try {
-                const sv = await fetch(ANALYSIS_BASE + `/records/${id}/ai`, {
-                  method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
-                  body: JSON.stringify({ lang, text, model: j?.model || 'llm' })
+
+              const appendDelta = (piece) => {
+                if (!piece) return;
+                setAiText(prev => {
+                  const prevText = prev || '';
+                  let overlap = Math.min(prevText.length, piece.length);
+                  while (overlap > 0 && !prevText.endsWith(piece.slice(0, overlap))) overlap--;
+                  const nextText = prevText + piece.slice(overlap);
+                  aiAccumRef.current = nextText;
+                  return nextText;
                 });
-                const svj = await sv.json().catch(()=>({}));
-                if (sv.ok && svj?.ai) {
-                  setMeta(m => ({ ...(m||{}), ai: svj.ai, ai_generated_at: svj.ai_generated_at }));
+              };
+
+              const runStream = () => new Promise((resolve, reject) => {
+                fetch('/api/llm/chat_stream', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ messages, temperature: 0.2 })
+                }).then(async (init) => {
+                  if (!init.ok) {
+                    const errText = await init.text().catch(() => '');
+                    reject(new Error(errText || 'stream init failed'));
+                    return;
+                  }
+                  const { id: streamId } = await init.json().catch(() => ({}));
+                  if (!streamId) {
+                    reject(new Error('stream init failed'));
+                    return;
+                  }
+                  let aborted = false;
+                  const es = new EventSource(`/api/llm/chat_stream?id=${encodeURIComponent(streamId)}`);
+                  const cleanup = () => {
+                    es.close();
+                    aiAbortRef.current = null;
+                  };
+                  aiAbortRef.current = {
+                    abort: () => {
+                      aborted = true;
+                      cleanup();
+                      reject(new DOMException('aborted', 'AbortError'));
+                    }
+                  };
+                  es.onmessage = (evt) => {
+                    if (!evt.data) return;
+                    let payload;
+                    try { payload = JSON.parse(evt.data); } catch { return; }
+                    if (payload.delta) appendDelta(String(payload.delta));
+                    if (payload.model) aiModelRef.current = String(payload.model);
+                    if (payload.error) {
+                      cleanup();
+                      reject(new Error(payload.error));
+                      return;
+                    }
+                    if (payload.done) {
+                      cleanup();
+                      resolve({ text: aiAccumRef.current, model: aiModelRef.current });
+                    }
+                  };
+                  es.onerror = () => {
+                    if (aborted) return;
+                    cleanup();
+                    reject(new Error('stream error'));
+                  };
+                }).catch(reject);
+              });
+
+              const persistAi = async (text, model) => {
+                if (!text || !text.trim()) return;
+                try {
+                  const sv = await fetch(ANALYSIS_BASE + `/records/${id}/ai`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ lang, text, model: model || 'llm' })
+                  });
+                  const svj = await sv.json().catch(() => ({}));
+                  if (sv.ok && svj?.ai) {
+                    setMeta(m => ({ ...(m || {}), ai: svj.ai, ai_generated_at: svj.ai_generated_at }));
+                  }
+                } catch {}
+              };
+
+              let result = null;
+              try {
+                result = await runStream();
+              } catch (streamErr) {
+                if (streamErr?.name === 'AbortError') throw streamErr;
+                try {
+                  const resp = await fetch(LLM_BASE + '/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ messages, temperature: 0.2 })
+                  });
+                  const j = await resp.json().catch(() => ({}));
+                  if (!resp.ok || j?.error) throw new Error(j?.error || 'chat failed');
+                  const text = j?.text || '';
+                  aiAccumRef.current = text;
+                  aiModelRef.current = j?.model || aiModelRef.current;
+                  setAiText(text);
+                  result = { text, model: aiModelRef.current };
+                } catch (fallbackErr) {
+                  throw fallbackErr instanceof Error ? fallbackErr : new Error(fallbackErr?.message || 'chat failed');
                 }
-              } catch {}
-            }catch(e){ setAiErr((e?.message)||'AI analysis failed'); }
-            finally{ setAiBusy(false); }
+              }
+
+              const finalText = (result?.text || aiAccumRef.current || '').trim() ? result?.text || aiAccumRef.current : '';
+              if (!finalText) throw new Error('chat failed');
+              if (finalText !== aiText) setAiText(finalText);
+              await persistAi(finalText, result?.model || aiModelRef.current);
+            } catch (e) {
+              if (e?.name === 'AbortError') {
+                setAiErr('');
+              } else {
+                setAiErr((e?.message) || 'AI analysis failed');
+              }
+              if (e?.name !== 'AbortError') {
+                aiAccumRef.current = '';
+                setAiText('');
+              }
+            } finally {
+              setAiBusy(false);
+              aiAbortRef.current = null;
+            }
           }} className="vh-btn vh-btn-primary" style={{ padding:'8px 12px', opacity: aiBusy ? 0.7 : 1, cursor: 'pointer' }}>
             {aiBusy ? t('Analyzing') : t('RunAI')}
           </button>

@@ -367,7 +367,7 @@ async def render_spectrogram_pcm(
 
 @app.post('/features_media')
 async def features_media(
-    mediaId: str = Body(...),
+    mediaId: str = Body(..., embed=True),
     authorization: Optional[str] = Header(default=None, convert_underscores=False)
 ):
     sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
@@ -437,7 +437,7 @@ async def pcg_quality_pcm(
 
 @app.post('/pcg_quality_media')
 async def pcg_quality_media(
-    mediaId: str = Body(...),
+    mediaId: str = Body(..., embed=True),
     authorization: Optional[str] = Header(default=None, convert_underscores=False)
 ):
     sr, y, err = await _fetch_wav_and_decode(mediaId, authorization)
@@ -449,7 +449,7 @@ async def pcg_quality_media(
 
 @app.post('/spectrogram_media')
 async def spectrogram_media(
-    mediaId: str = Body(...),
+    mediaId: str = Body(..., embed=True),
     width: int = Body(1400),
     height: int = Body(320),
     maxFreq: Optional[int] = Body(2000),

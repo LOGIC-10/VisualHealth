@@ -7,12 +7,13 @@ import pkg from 'pg';
 
 const { Pool } = pkg;
 const PORT = process.env.PORT || 4005;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = globalThis.__FEED_TEST_POOL__ || new Pool({ connectionString: process.env.DATABASE_URL });
 const AUTH_BASE = process.env.AUTH_BASE || 'http://auth-service:4001';
 
 async function init() {
-  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto; 
-  CREATE TABLE IF NOT EXISTS posts (
+  const baseStatements = [
+    'CREATE EXTENSION IF NOT EXISTS pgcrypto',
+    `CREATE TABLE IF NOT EXISTS posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     content TEXT NOT NULL,
@@ -20,20 +21,20 @@ async function init() {
     author_name TEXT,
     author_email TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-  );
-  CREATE TABLE IF NOT EXISTS likes (
+  )`,
+    `CREATE TABLE IF NOT EXISTS likes (
     user_id UUID NOT NULL,
     post_id UUID NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, post_id)
-  );
-  CREATE TABLE IF NOT EXISTS bookmarks (
+  )`,
+    `CREATE TABLE IF NOT EXISTS bookmarks (
     user_id UUID NOT NULL,
     post_id UUID NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, post_id)
-  );
-  CREATE TABLE IF NOT EXISTS comments (
+  )`,
+    `CREATE TABLE IF NOT EXISTS comments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     post_id UUID NOT NULL,
@@ -42,43 +43,37 @@ async function init() {
     author_email TEXT,
     parent_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-  );
-  CREATE TABLE IF NOT EXISTS post_media (
+  )`,
+    `CREATE TABLE IF NOT EXISTS post_media (
     post_id UUID NOT NULL,
     media_id UUID NOT NULL,
     idx INT NOT NULL,
     PRIMARY KEY (post_id, idx)
-  );
-  CREATE TABLE IF NOT EXISTS comment_media (
+  )`,
+    `CREATE TABLE IF NOT EXISTS comment_media (
     comment_id UUID NOT NULL,
     media_id UUID NOT NULL,
     idx INT NOT NULL,
     PRIMARY KEY (comment_id, idx)
-  );
-  CREATE TABLE IF NOT EXISTS comment_votes (
+  )`,
+    `CREATE TABLE IF NOT EXISTS comment_votes (
     user_id UUID NOT NULL,
     comment_id UUID NOT NULL,
     value SMALLINT NOT NULL CHECK (value IN (-1,1)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, comment_id)
-  );
-  `);
-  // Safe migrations for added columns
-  await pool.query(`
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_name TEXT;
-    ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_email TEXT;
-    ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_name TEXT;
-    ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_email TEXT;
-    ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id UUID;
-    CREATE INDEX IF NOT EXISTS idx_comments_post_parent ON comments(post_id, parent_id);
-    CREATE TABLE IF NOT EXISTS comment_votes (
-      user_id UUID NOT NULL,
-      comment_id UUID NOT NULL,
-      value SMALLINT NOT NULL CHECK (value IN (-1,1)),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (user_id, comment_id)
-    );
-  `);
+  )`,
+    'ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_name TEXT',
+    'ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_email TEXT',
+    'ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_name TEXT',
+    'ALTER TABLE comments ADD COLUMN IF NOT EXISTS author_email TEXT',
+    'ALTER TABLE comments ADD COLUMN IF NOT EXISTS parent_id UUID',
+    'CREATE INDEX IF NOT EXISTS idx_comments_post_parent ON comments(post_id, parent_id)'
+  ];
+  for (const stmt of baseStatements) {
+    if (process.env.NODE_ENV === 'test' && stmt.toUpperCase().startsWith('CREATE EXTENSION')) continue;
+    await pool.query(stmt);
+  }
 }
 
 function requireUser(req) {
@@ -137,65 +132,93 @@ app.post('/posts', async (req, res) => {
 });
 
 app.get('/posts', async (req, res) => {
-  const auth = req.headers.authorization || '';
-  let currentUser = null;
-  try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
-  const { rows } = await pool.query(`
-    SELECT p.*, 
-      COALESCE((SELECT json_agg(pm.media_id ORDER BY pm.idx) FROM post_media pm WHERE pm.post_id=p.id), '[]'::json) AS media_ids,
-      (SELECT count(*)::int FROM likes l WHERE l.post_id=p.id) AS likes,
-      (SELECT count(*)::int FROM comments c WHERE c.post_id=p.id) AS comments,
-      ${currentUser ? `(SELECT EXISTS(SELECT 1 FROM likes l2 WHERE l2.post_id=p.id AND l2.user_id='${currentUser}')) AS liked_by_me` : `false AS liked_by_me`}
-    FROM posts p ORDER BY created_at DESC LIMIT 100`);
-  // Enrich author info from auth-service to ensure single source of truth
   try {
-    const ids = Array.from(new Set(rows.map(r => r.user_id))).filter(Boolean);
-    if (ids.length) {
-      const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids }) });
-      if (resp.ok) {
-        const j = await resp.json();
-        const map = new Map((j?.users || []).map(u => [u.id, u]));
-        for (const r of rows) {
-          const u = map.get(r.user_id);
-          if (u) {
-            r.author_display_name = u.display_name || u.email || r.author_name || r.author_email || null;
-            r.author_avatar_media_id = u.avatar_media_id || null;
-            r.author_email = u.email || r.author_email || null;
+    const auth = req.headers.authorization || '';
+    let currentUser = null;
+    try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
+    // 1) 先取基础帖子列表
+    const { rows } = await pool.query('SELECT * FROM posts ORDER BY created_at DESC LIMIT 100');
+    // 2) 在 Node 层补齐聚合与计数，避免 pg-mem 子查询别名限制
+    for (const r of rows) {
+      const mid = await pool.query('SELECT COALESCE(json_agg(pm.media_id ORDER BY pm.idx), ' + "'[]'" + '::json) AS media_ids FROM post_media pm WHERE pm.post_id=$1', [r.id]);
+      r.media_ids = mid.rows[0]?.media_ids || [];
+      const likeCnt = await pool.query('SELECT count(*)::int AS c FROM likes WHERE post_id=$1', [r.id]);
+      r.likes = likeCnt.rows[0]?.c || 0;
+      const cmtCnt = await pool.query('SELECT count(*)::int AS c FROM comments WHERE post_id=$1', [r.id]);
+      r.comments = cmtCnt.rows[0]?.c || 0;
+      if (currentUser) {
+        const liked = await pool.query('SELECT EXISTS(SELECT 1 FROM likes WHERE post_id=$1 AND user_id=$2) AS liked', [r.id, currentUser]);
+        r.liked_by_me = !!liked.rows[0]?.liked;
+      } else {
+        r.liked_by_me = false;
+      }
+    }
+    // 3) 富化作者信息，保持单一事实来源
+    try {
+      const ids = Array.from(new Set(rows.map(r => r.user_id))).filter(Boolean);
+      if (ids.length) {
+        const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids }) });
+        if (resp.ok) {
+          const j = await resp.json();
+          const map = new Map((j?.users || []).map(u => [u.id, u]));
+          for (const r of rows) {
+            const u = map.get(r.user_id);
+            if (u) {
+              r.author_display_name = u.display_name || u.email || r.author_name || r.author_email || null;
+              r.author_avatar_media_id = u.avatar_media_id || null;
+              r.author_email = u.email || r.author_email || null;
+            }
           }
         }
       }
-    }
-  } catch {}
-  res.json(rows);
+    } catch {}
+    res.json(rows);
+  } catch (e) {
+    console.error('GET /posts error:', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 app.get('/posts/:id', async (req, res) => {
-  const auth = req.headers.authorization || '';
-  let currentUser = null;
-  try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
-  const { rows } = await pool.query(`
-    SELECT p.*, 
-      COALESCE((SELECT json_agg(pm.media_id ORDER BY pm.idx) FROM post_media pm WHERE pm.post_id=p.id), '[]'::json) AS media_ids,
-      (SELECT count(*)::int FROM likes l WHERE l.post_id=p.id) AS likes,
-      (SELECT count(*)::int FROM comments c WHERE c.post_id=p.id) AS comments,
-      ${currentUser ? `(SELECT EXISTS(SELECT 1 FROM likes l2 WHERE l2.post_id=p.id AND l2.user_id='${currentUser}')) AS liked_by_me` : `false AS liked_by_me`}
-    FROM posts p WHERE p.id=$1 LIMIT 1`, [req.params.id]);
-  if (!rows.length) return res.status(404).json({ error: 'not found' });
-  const row = rows[0];
-  // Enrich author info
   try {
-    const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids: [row.user_id] }) });
-    if (resp.ok) {
-      const j = await resp.json();
-      const u = (j?.users || [])[0];
-      if (u) {
-        row.author_display_name = u.display_name || u.email || row.author_name || row.author_email || null;
-        row.author_avatar_media_id = u.avatar_media_id || null;
-        row.author_email = u.email || row.author_email || null;
-      }
+    const auth = req.headers.authorization || '';
+    let currentUser = null;
+    try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
+    // 1) 取基础帖子
+    const base = await pool.query('SELECT * FROM posts WHERE id=$1 LIMIT 1', [req.params.id]);
+    if (!base.rows.length) return res.status(404).json({ error: 'not found' });
+    const row = base.rows[0];
+    // 2) 在 Node 层补齐聚合与计数
+    const mid = await pool.query('SELECT COALESCE(json_agg(pm.media_id ORDER BY pm.idx), ' + "'[]'" + '::json) AS media_ids FROM post_media pm WHERE pm.post_id=$1', [row.id]);
+    row.media_ids = mid.rows[0]?.media_ids || [];
+    const likeCnt = await pool.query('SELECT count(*)::int AS c FROM likes WHERE post_id=$1', [row.id]);
+    row.likes = likeCnt.rows[0]?.c || 0;
+    const cmtCnt = await pool.query('SELECT count(*)::int AS c FROM comments WHERE post_id=$1', [row.id]);
+    row.comments = cmtCnt.rows[0]?.c || 0;
+    if (currentUser) {
+      const liked = await pool.query('SELECT EXISTS(SELECT 1 FROM likes WHERE post_id=$1 AND user_id=$2) AS liked', [row.id, currentUser]);
+      row.liked_by_me = !!liked.rows[0]?.liked;
+    } else {
+      row.liked_by_me = false;
     }
-  } catch {}
-  res.json(row);
+    // Enrich author info
+    try {
+      const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids: [row.user_id] }) });
+      if (resp.ok) {
+        const j = await resp.json();
+        const u = (j?.users || [])[0];
+        if (u) {
+          row.author_display_name = u.display_name || u.email || row.author_name || row.author_email || null;
+          row.author_avatar_media_id = u.avatar_media_id || null;
+          row.author_email = u.email || row.author_email || null;
+        }
+      }
+    } catch {}
+    res.json(row);
+  } catch (e) {
+    console.error('GET /posts/:id error:', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 app.post('/posts/:id/like', async (req, res) => {
@@ -253,36 +276,52 @@ app.post('/posts/:id/comments', async (req, res) => {
 });
 
 app.get('/posts/:id/comments', async (req, res) => {
-  const auth = req.headers.authorization || '';
-  let currentUser = null;
-  try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
-  const { rows } = await pool.query(`
-    SELECT c.*, 
-      COALESCE((SELECT json_agg(cm.media_id ORDER BY cm.idx) FROM comment_media cm WHERE cm.comment_id=c.id), '[]'::json) AS media_ids,
-      (SELECT count(*)::int FROM comment_votes v WHERE v.comment_id=c.id AND v.value=1) AS up,
-      (SELECT count(*)::int FROM comment_votes v WHERE v.comment_id=c.id AND v.value=-1) AS down,
-      ${currentUser ? `(SELECT COALESCE(MAX(value),0) FROM comment_votes v2 WHERE v2.comment_id=c.id AND v2.user_id='${currentUser}') AS my_vote` : `0 AS my_vote`}
-    FROM comments c WHERE c.post_id=$1 ORDER BY created_at ASC`, [req.params.id]);
-  // Enrich comment authors
   try {
-    const ids = Array.from(new Set(rows.map(r => r.user_id))).filter(Boolean);
-    if (ids.length) {
-      const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids }) });
-      if (resp.ok) {
-        const j = await resp.json();
-        const map = new Map((j?.users || []).map(u => [u.id, u]));
-        for (const r of rows) {
-          const u = map.get(r.user_id);
-          if (u) {
-            r.author_display_name = u.display_name || u.email || r.author_name || r.author_email || null;
-            r.author_avatar_media_id = u.avatar_media_id || null;
-            r.author_email = u.email || r.author_email || null;
+    const auth = req.headers.authorization || '';
+    let currentUser = null;
+    try { if (auth.startsWith('Bearer ')) currentUser = jwt.decode(auth.slice(7))?.sub || null; } catch {}
+    // 1) 取基础评论列表
+    const base = await pool.query('SELECT * FROM comments WHERE post_id=$1 ORDER BY created_at ASC', [req.params.id]);
+    const rows = base.rows;
+    // 2) 在 Node 层补齐聚合、计数与 my_vote
+    for (const r of rows) {
+      const mid = await pool.query('SELECT COALESCE(json_agg(cm.media_id ORDER BY cm.idx), ' + "'[]'" + '::json) AS media_ids FROM comment_media cm WHERE cm.comment_id=$1', [r.id]);
+      r.media_ids = mid.rows[0]?.media_ids || [];
+      const up = await pool.query('SELECT count(*)::int AS c FROM comment_votes WHERE comment_id=$1 AND value=1', [r.id]);
+      r.up = up.rows[0]?.c || 0;
+      const down = await pool.query('SELECT count(*)::int AS c FROM comment_votes WHERE comment_id=$1 AND value=-1', [r.id]);
+      r.down = down.rows[0]?.c || 0;
+      if (currentUser) {
+        const my = await pool.query('SELECT COALESCE(MAX(value),0) AS v FROM comment_votes WHERE comment_id=$1 AND user_id=$2', [r.id, currentUser]);
+        r.my_vote = my.rows[0]?.v || 0;
+      } else {
+        r.my_vote = 0;
+      }
+    }
+    // 3) 富化作者信息
+    try {
+      const ids = Array.from(new Set(rows.map(r => r.user_id))).filter(Boolean);
+      if (ids.length) {
+        const resp = await fetch(AUTH_BASE + '/users/bulk', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ ids }) });
+        if (resp.ok) {
+          const j = await resp.json();
+          const map = new Map((j?.users || []).map(u => [u.id, u]));
+          for (const r of rows) {
+            const u = map.get(r.user_id);
+            if (u) {
+              r.author_display_name = u.display_name || u.email || r.author_name || r.author_email || null;
+              r.author_avatar_media_id = u.avatar_media_id || null;
+              r.author_email = u.email || r.author_email || null;
+            }
           }
         }
       }
-    }
-  } catch {}
-  res.json(rows);
+    } catch {}
+    res.json(rows);
+  } catch (e) {
+    console.error('GET /posts/:id/comments error:', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 // Vote on a comment: value = 1 (up) or -1 (down). Same value toggles off.
@@ -347,4 +386,13 @@ app.delete('/posts/:id', async (req, res) => {
   }
 });
 
-init().then(() => app.listen(PORT, () => console.log(`feed-service on :${PORT}`)));
+async function start() {
+  await init();
+  return app.listen(PORT, () => console.log(`feed-service on :${PORT}`));
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  start();
+}
+
+export { app, init, pool, start };

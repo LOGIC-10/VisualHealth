@@ -16,7 +16,7 @@ const { Pool } = pkg;
 const PORT = process.env.PORT || 4001;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_me';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = globalThis.__AUTH_TEST_POOL__ || new Pool({ connectionString: process.env.DATABASE_URL });
 
 const resendClient = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 function buildFrom(raw){
@@ -51,32 +51,29 @@ async function sendCodeEmail(to, code){
 }
 
 async function init() {
-  await pool.query(`
-    CREATE EXTENSION IF NOT EXISTS pgcrypto;
-    CREATE TABLE IF NOT EXISTS users (
+  const statements = [
+    'CREATE EXTENSION IF NOT EXISTS pgcrypto',
+    `CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       display_name TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    -- Progressive schema upgrades
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS height_cm SMALLINT;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_kg REAL;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_media_id UUID;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_display_name_change_at TIMESTAMPTZ;
-    -- Extensions for privacy and security
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_visibility JSONB;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_extras JSONB;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false;
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
-    
-    CREATE TABLE IF NOT EXISTS email_tokens (
+    )`,
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS height_cm SMALLINT',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_kg REAL',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_media_id UUID',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS last_display_name_change_at TIMESTAMPTZ',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_visibility JSONB',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_extras JSONB',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT false',
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT',
+    `CREATE TABLE IF NOT EXISTS email_tokens (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       token TEXT UNIQUE NOT NULL,
@@ -84,10 +81,14 @@ async function init() {
       expires_at TIMESTAMPTZ NOT NULL,
       used_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    CREATE INDEX IF NOT EXISTS email_tokens_user_idx ON email_tokens(user_id);
-    CREATE INDEX IF NOT EXISTS email_tokens_purpose_idx ON email_tokens(purpose);
-  `);
+    )`,
+    'CREATE INDEX IF NOT EXISTS email_tokens_user_idx ON email_tokens(user_id)',
+    'CREATE INDEX IF NOT EXISTS email_tokens_purpose_idx ON email_tokens(purpose)'
+  ];
+  for (const stmt of statements) {
+    if (process.env.NODE_ENV === 'test' && stmt.toUpperCase().startsWith('CREATE EXTENSION')) continue;
+    await pool.query(stmt);
+  }
 }
 
 function signToken(user) {
@@ -398,4 +399,13 @@ app.post('/users/bulk', async (req, res) => {
   }
 });
 
-init().then(() => app.listen(PORT, () => console.log(`auth-service on :${PORT}`)));
+async function start() {
+  await init();
+  return app.listen(PORT, () => console.log(`auth-service on :${PORT}`));
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  start();
+}
+
+export { app, init, pool, start };

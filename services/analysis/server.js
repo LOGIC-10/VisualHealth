@@ -7,14 +7,15 @@ import pkg from 'pg';
 
 const PORT = process.env.PORT || 4004;
 const { Pool } = pkg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = globalThis.__ANALYSIS_TEST_POOL__ || new Pool({ connectionString: process.env.DATABASE_URL });
 const VIZ_BASE = process.env.VIZ_BASE || 'http://viz-service:4006';
 const USE_HSMM = (process.env.VIZ_USE_HSMM === '1');
 const LLM_SVC = process.env.LLM_SVC || 'http://llm-service:4007';
 
 async function init() {
-  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;
-    CREATE TABLE IF NOT EXISTS analysis_records (
+  const statements = [
+    'CREATE EXTENSION IF NOT EXISTS pgcrypto',
+    `CREATE TABLE IF NOT EXISTS analysis_records (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id UUID NOT NULL,
       media_id UUID NOT NULL,
@@ -28,33 +29,35 @@ async function init() {
       ai_generated_at TIMESTAMPTZ,
       features JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_records(user_id);
-    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS title TEXT;
-    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS adv JSONB;
-    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS spec_media_id UUID;
-    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai JSONB;
-    ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai_generated_at TIMESTAMPTZ;
-    -- Chat messages per analysis record
-    CREATE TABLE IF NOT EXISTS analysis_chat_messages (
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_analysis_user ON analysis_records(user_id)',
+    'ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS title TEXT',
+    'ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS adv JSONB',
+    'ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS spec_media_id UUID',
+    'ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai JSONB',
+    'ALTER TABLE analysis_records ADD COLUMN IF NOT EXISTS ai_generated_at TIMESTAMPTZ',
+    `CREATE TABLE IF NOT EXISTS analysis_chat_messages (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       record_id UUID NOT NULL,
       user_id UUID NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('user','assistant')),
       content TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    CREATE INDEX IF NOT EXISTS idx_chat_record ON analysis_chat_messages(record_id);
-    CREATE INDEX IF NOT EXISTS idx_chat_user ON analysis_chat_messages(user_id);
-    -- Cross-record cache by audio content hash (sha-256 hex)
-    CREATE TABLE IF NOT EXISTS pcg_cache (
+    )`,
+    'CREATE INDEX IF NOT EXISTS idx_chat_record ON analysis_chat_messages(record_id)',
+    'CREATE INDEX IF NOT EXISTS idx_chat_user ON analysis_chat_messages(user_id)',
+    `CREATE TABLE IF NOT EXISTS pcg_cache (
       hash TEXT PRIMARY KEY,
       spec_media_id UUID,
       adv JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
+    )`
+  ];
+  for (const stmt of statements) {
+    if (process.env.NODE_ENV === 'test' && stmt.toUpperCase().startsWith('CREATE EXTENSION')) continue;
+    await pool.query(stmt);
+  }
 }
 
 function verify(req) {
@@ -286,7 +289,14 @@ app.delete('/records/:id', async (req, res) => {
   }
 });
 
-init().then(() => app.listen(PORT, () => console.log(`analysis-service on :${PORT}`)));
+async function start() {
+  await init();
+  return app.listen(PORT, () => console.log(`analysis-service on :${PORT}`));
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  start();
+}
 
 // Start AI analysis in background and persist result
 
@@ -398,3 +408,5 @@ app.post('/records/:id/ai', async (req, res) => {
     res.status(400).json({ error: 'ai save failed' });
   }
 });
+
+export { app, init, pool, start, sseBroadcast };

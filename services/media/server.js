@@ -18,7 +18,7 @@ if (MASTER_KEY.length !== 32) {
 }
 const KEY = MASTER_KEY.length === 32 ? MASTER_KEY : LEGACY_KEY;
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = globalThis.__MEDIA_TEST_POOL__ || new Pool({ connectionString: process.env.DATABASE_URL });
 const URL_SIGN_SECRET = process.env.MEDIA_URL_SIGN_SECRET || 'dev_url_sign_secret_change_me';
 
 function signUrlPayload(id, userId, expMs) {
@@ -41,7 +41,9 @@ function buildContentDispositionInline(filename) {
 }
 
 async function init() {
-  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE TABLE IF NOT EXISTS media_files (
+  const statements = [
+    'CREATE EXTENSION IF NOT EXISTS pgcrypto',
+    `CREATE TABLE IF NOT EXISTS media_files (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     filename TEXT NOT NULL,
@@ -52,8 +54,14 @@ async function init() {
     ciphertext BYTEA NOT NULL,
     is_public BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-  ); CREATE INDEX IF NOT EXISTS idx_media_user ON media_files(user_id);
-  ALTER TABLE media_files ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;`);
+  )`,
+    'CREATE INDEX IF NOT EXISTS idx_media_user ON media_files(user_id)',
+    'ALTER TABLE media_files ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false'
+  ];
+  for (const stmt of statements) {
+    if (process.env.NODE_ENV === 'test' && stmt.toUpperCase().startsWith('CREATE EXTENSION')) continue;
+    await pool.query(stmt);
+  }
 }
 
 function verify(req) {
@@ -216,4 +224,13 @@ app.get('/file_url/:id', async (req, res) => {
   }
 });
 
-init().then(() => app.listen(PORT, () => console.log(`media-service on :${PORT}`)));
+async function start() {
+  await init();
+  return app.listen(PORT, () => console.log(`media-service on :${PORT}`));
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  start();
+}
+
+export { app, init, pool, KEY, LEGACY_KEY, start };

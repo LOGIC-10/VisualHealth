@@ -1,0 +1,41 @@
+name: Container CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Web tests
+        run: docker compose -f docker-compose.tests.yml run --rm web-tests
+
+      - name: Auth tests
+        run: docker compose -f docker-compose.tests.yml run --rm auth-tests
+
+      - name: Media tests
+        run: docker compose -f docker-compose.tests.yml run --rm media-tests
+
+      - name: Analysis tests
+        run: docker compose -f docker-compose.tests.yml run --rm analysis-tests
+
+      - name: Feed tests
+        run: docker compose -f docker-compose.tests.yml run --rm feed-tests
+
+      - name: Viz tests
+        run: docker compose -f docker-compose.tests.yml run --rm viz-tests
+
+      - name: LLM tests
+        run: docker compose -f docker-compose.tests.yml run --rm llm-tests
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.tests.yml down --remove-orphans -v

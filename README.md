@@ -41,11 +41,11 @@ VisualHealth — 心音可视化与社区（微服务架构）
   - 方式一（Docker）：`docker compose up frontend -d`（会自动 npm install 并运行 dev）。
   - 方式二（本机）：`cd apps/web && npm install && npm run dev`（其余服务仍通过 Docker 提供）。
 
-单元测试
-- Web（Jest，Node 环境）：`cd apps/web && npm install && npm test`。覆盖 `lib/`、`components/`、`app/api/` 与 `middleware.ts`，新增对 LLM 流式代理与 Edge Middleware 的单元测试，验证请求缓存、SSE 透传与 Cookie 规范设置。
+- Web（Jest，Node 环境）：`cd apps/web && npm install && npm test`。覆盖 `lib/`、`components/`、`app/api/` 与 `middleware.ts`，以及 LLM 流式代理与 Edge Middleware 场景，验证请求缓存、SSE 透传与 Cookie 设置。
+- Web E2E（Playwright）：`cd apps/web && npm install && npx playwright install && npm run test:e2e`。自动驱动浏览器走访客注册 → 邮箱验证引导 → 重新登录的端到端路径，依赖整个 docker-compose 栈运行；本地先 `bash scripts/start.sh`，或设置环境变量 `E2E_BASE_URL` 覆盖默认 `http://localhost:3000`。
 - Node.js 微服务（Jest + Supertest + pg-mem）：依次执行 `cd services/<service> && npm install && npm test`，具体包括 `auth`、`media`、`analysis`、`feed`。全部测试在内存数据库中自动建表，覆盖鉴权边界、数据校验、缓存/加密策略、媒体签名 URL 以及社区投票状态机等关键路径。
 - Python 服务（Pytest + FastAPI TestClient）：`cd services/viz && pip install -r requirements.txt && pytest` 与 `cd services/llm && pip install -r requirements.txt && pytest`。通过注入 httpx/LLM stub 验证波形特征、频谱生成、HSMM 事件抽取与流式聊天异常兜底。
-- 汇总回归：`bash scripts/run-tests.sh` 串行执行所有前端、Node 微服务与 Python 服务测试，默认带 `--runInBand`/`pytest -q`，确保本地机器稳定完成。首次运行前按上文准备依赖（npm/pip）。
+- 汇总回归：`bash scripts/run-tests.sh` 串行执行所有前端、Node 微服务与 Python 服务单元测试，默认带 `--runInBand`/`pytest -q`。端到端测试体量较大，需单独运行 `npm run test:e2e`。
 - 日常排查：可继续在各目录单独调用测试命令，所有套件默认无需真实数据库或外部网络；如需覆盖新增服务，请同步更新脚本与 README。
 - 覆盖约定：新增模块保持 ≥80%，关键路径（认证、媒体加密、分析缓存、LLM 网关、前端音频预处理与边缘路由）均维持成功/失败场景测试。提交新功能必须附带相应测试或说明例外情况。
 

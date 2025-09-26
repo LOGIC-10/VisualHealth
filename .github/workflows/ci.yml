@@ -39,3 +39,46 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose -f docker-compose.tests.yml down --remove-orphans -v
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: apps/web
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+        working-directory: apps/web
+
+      - name: Build and start stack
+        run: docker compose -f docker-compose.yml up --build -d
+
+      - name: Wait for services
+        run: ./scripts/wait-for-services.sh 240
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        working-directory: apps/web
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: apps/web/test-results
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker-compose.yml down --remove-orphans -v

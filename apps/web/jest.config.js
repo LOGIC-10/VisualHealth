@@ -5,5 +5,6 @@ module.exports = {
     '^.+\\.[jt]sx?$': 'babel-jest'
   },
   collectCoverageFrom: ['lib/**/*.js', 'components/**/*.js', 'app/api/**/*.js', 'middleware.ts'],
-  roots: ['<rootDir>/tests']
+  roots: ['<rootDir>/tests'],
+  testPathIgnorePatterns: ['/tests/e2e/']
 };

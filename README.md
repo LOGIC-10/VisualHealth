@@ -42,12 +42,12 @@ VisualHealth — 心音可视化与社区（微服务架构）
   - 方式二（本机）：`cd apps/web && npm install && npm run dev`（其余服务仍通过 Docker 提供）。
 
 单元测试
-- Web（Jest + jsdom）：`cd apps/web && npm install && npm test`。覆盖 `lib/` 与 `components/` 中的工具函数与渲染逻辑，包括本地解码/分析辅助方法、Markdown 渲染、跨窗口状态管理等。
-- Node.js 微服务（Jest + Supertest + pg-mem）：依次执行 `cd services/<service> && npm install && npm test`，具体包括 `auth`、`media`、`analysis`、`feed`。测试在内存数据库中自动建表，涵盖鉴权边界、数据校验、缓存/加密策略与错误分支。
-- Python 服务（Pytest + FastAPI TestClient）：`cd services/viz && pip install -r requirements.txt && pytest`，`cd services/llm && pip install -r requirements.txt && pytest`。通过注入 httpx/LLM stub 验证波形、频谱、特征提取与流式聊天。
-- 快速回归：`bash scripts/run-tests.sh` 会串行执行所有前端、Node 微服务与 Python 服务的测试，默认使用 `--runInBand`/`pytest -q` 保证在本地机器上稳定运行。首次运行前请确保依赖已按上文安装。
-- 如需逐项排查，可仍按上文顺序在各目录单独执行测试命令。所有套件在默认配置下无需真实数据库或外部网络依赖。
-- 覆盖率目标：新增模块保持 ≥80%，关键路径（认证、媒体加密、分析缓存、LLM 网关、前端音频预处理）均已补齐成功/失败场景；若后续引入新服务，请同步添加相应测试命令与覆盖说明。
+- Web（Jest，Node 环境）：`cd apps/web && npm install && npm test`。覆盖 `lib/`、`components/`、`app/api/` 与 `middleware.ts`，新增对 LLM 流式代理与 Edge Middleware 的单元测试，验证请求缓存、SSE 透传与 Cookie 规范设置。
+- Node.js 微服务（Jest + Supertest + pg-mem）：依次执行 `cd services/<service> && npm install && npm test`，具体包括 `auth`、`media`、`analysis`、`feed`。全部测试在内存数据库中自动建表，覆盖鉴权边界、数据校验、缓存/加密策略、媒体签名 URL 以及社区投票状态机等关键路径。
+- Python 服务（Pytest + FastAPI TestClient）：`cd services/viz && pip install -r requirements.txt && pytest` 与 `cd services/llm && pip install -r requirements.txt && pytest`。通过注入 httpx/LLM stub 验证波形特征、频谱生成、HSMM 事件抽取与流式聊天异常兜底。
+- 汇总回归：`bash scripts/run-tests.sh` 串行执行所有前端、Node 微服务与 Python 服务测试，默认带 `--runInBand`/`pytest -q`，确保本地机器稳定完成。首次运行前按上文准备依赖（npm/pip）。
+- 日常排查：可继续在各目录单独调用测试命令，所有套件默认无需真实数据库或外部网络；如需覆盖新增服务，请同步更新脚本与 README。
+- 覆盖约定：新增模块保持 ≥80%，关键路径（认证、媒体加密、分析缓存、LLM 网关、前端音频预处理与边缘路由）均维持成功/失败场景测试。提交新功能必须附带相应测试或说明例外情况。
 
 账号与登录
 - 前端“Login/Sign up”完成注册/登录；浏览器本地保存 JWT（localStorage: vh_token）。

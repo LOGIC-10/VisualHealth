@@ -3,4 +3,4 @@ uvicorn==0.30.6
 openai==1.51.2
 # Avoid httpx>=0.28 due to 'proxies' kw incompat with some OpenAI clients
 httpx<0.28
-
+pytest==8.2.2

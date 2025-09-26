@@ -1,0 +1,63 @@
+services:
+  web-tests:
+    image: node:20
+    working_dir: /workspace
+    volumes:
+      - ./apps/web:/workspace
+    environment:
+      NODE_ENV: test
+    command: ["bash", "-lc", "npm ci && npm test -- --runInBand"]
+
+  auth-tests:
+    image: node:20
+    working_dir: /workspace
+    volumes:
+      - ./services/auth:/workspace
+    environment:
+      NODE_ENV: test
+    command: ["bash", "-lc", "npm ci && npm test -- --runInBand"]
+
+  media-tests:
+    image: node:20
+    working_dir: /workspace
+    volumes:
+      - ./services/media:/workspace
+    environment:
+      NODE_ENV: test
+    command: ["bash", "-lc", "npm ci && npm test -- --runInBand"]
+
+  analysis-tests:
+    image: node:20
+    working_dir: /workspace
+    volumes:
+      - ./services/analysis:/workspace
+    environment:
+      NODE_ENV: test
+    command: ["bash", "-lc", "npm ci && npm test -- --runInBand"]
+
+  feed-tests:
+    image: node:20
+    working_dir: /workspace
+    volumes:
+      - ./services/feed:/workspace
+    environment:
+      NODE_ENV: test
+    command: ["bash", "-lc", "npm ci && npm test -- --runInBand"]
+
+  viz-tests:
+    image: python:3.11
+    working_dir: /workspace
+    volumes:
+      - ./services/viz:/workspace
+    environment:
+      PYTHONUNBUFFERED: '1'
+    command: ["bash", "-lc", "pip install -r requirements.txt && pytest -q"]
+
+  llm-tests:
+    image: python:3.11
+    working_dir: /workspace
+    volumes:
+      - ./services/llm:/workspace
+    environment:
+      PYTHONUNBUFFERED: '1'
+    command: ["bash", "-lc", "pip install -r requirements.txt && pytest -q"]
